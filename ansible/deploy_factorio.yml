@@ -1,0 +1,16 @@
+---
+- name: Deploy Factorio server
+  hosts: factorio
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - defaults/main.yaml
+
+  tasks:
+    - name: Run Factorio deployment tasks
+      ansible.builtin.import_tasks: tasks/main.yml
+
+  handlers:
+    - name: Load Factorio handlers
+      ansible.builtin.import_tasks: handlers/main.yml

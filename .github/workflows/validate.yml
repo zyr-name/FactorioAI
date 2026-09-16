@@ -1,0 +1,21 @@
+name: Validate server
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration and scripts
+        run: |
+          docker compose config --quiet
+          bash -n docker/entrypoint.sh scripts/backup.sh tests/smoke.sh
+          shellcheck docker/entrypoint.sh scripts/backup.sh tests/smoke.sh
+          python3 -m json.tool config/server-settings.example.json >/dev/null
+      - name: Build and test startup and persistence
+        run: ./tests/smoke.sh

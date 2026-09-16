@@ -1,0 +1,8 @@
+all:
+  children:
+    factorio:
+      hosts:
+        factorio-server:
+          ansible_host: factorio.example.com
+          ansible_user: deploy
+          # Store become credentials in Ansible Vault, not in this file.

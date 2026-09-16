@@ -1,0 +1,74 @@
+---
+- name: Create Factorio service group
+  ansible.builtin.group:
+    name: factorio
+    system: true
+    gid: 845
+
+- name: Create Factorio service user and home directory
+  ansible.builtin.user:
+    name: factorio
+    group: factorio
+    uid: 845
+    home: /home/factorio
+    create_home: true
+    system: true
+    shell: /bin/bash
+
+- name: Ensure Factorio install directory is the service user's home
+  ansible.builtin.file:
+    path: /home/factorio
+    state: directory
+    owner: factorio
+    group: factorio
+    mode: '0755'
+
+- name: Create persistent Factorio data directory
+  ansible.builtin.file:
+    path: /home/factorio/data
+    state: directory
+    owner: factorio
+    group: factorio
+    mode: '0750'
+
+- name: Install bundled Factorio project into Factorio home
+  ansible.builtin.copy:
+    src: "../files/"
+    dest: /home/factorio/
+    owner: factorio
+    group: factorio
+    mode: preserve
+
+- name: Render deployment environment
+  ansible.builtin.template:
+    src: factorio.env.j2
+    dest: /home/factorio/.env
+    owner: factorio
+    group: factorio
+    mode: '0600'
+
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: factorio.service.j2
+    dest: /etc/systemd/system/factorio.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Factorio service
+
+- name: Build and start Factorio
+  ansible.builtin.command: docker compose up -d --build
+  args:
+    chdir: /home/factorio
+  register: factorio_compose_up
+  changed_when: >-
+    'Started' in factorio_compose_up.stdout or
+    'Recreated' in factorio_compose_up.stdout or
+    'Created' in factorio_compose_up.stdout
+
+- name: Enable and start Factorio at boot
+  ansible.builtin.systemd:
+    name: factorio.service
+    enabled: true
+    state: started
+    daemon_reload: true

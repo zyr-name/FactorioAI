@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!docker/
+!docker/entrypoint.sh
+!config/
+!config/server-settings.example.json

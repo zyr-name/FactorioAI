@@ -1,0 +1,26 @@
+name: factorio-server
+
+services:
+  factorio:
+    build:
+      context: .
+      args:
+        FACTORIO_VERSION: ${FACTORIO_VERSION:-2.0.77}
+    image: local/factorio-server:${FACTORIO_VERSION:-2.0.77}
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 2m
+    ports:
+      - "${FACTORIO_PORT:-34197}:${FACTORIO_PORT:-34197}/udp"
+    environment:
+      PORT: ${FACTORIO_PORT:-34197}
+      DLC_SPACE_AGE: "${DLC_SPACE_AGE:-false}"
+      LOAD_LATEST_SAVE: "true"
+      UPDATE_MODS_ON_START: "false"
+    volumes:
+      - ${FACTORIO_DATA_DIR:-./data}:/factorio
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

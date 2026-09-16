@@ -1,0 +1,16 @@
+{
+  "name": "My Factorio Server",
+  "description": "A private Factorio server for friends.",
+  "tags": ["friends"],
+  "max_players": 10,
+  "visibility": {
+    "public": false,
+    "lan": false
+  },
+  "require_user_verification": true,
+  "allow_commands": "admins-only",
+  "autosave_interval": 5,
+  "autosave_slots": 10,
+  "auto_pause": true,
+  "only_admins_can_pause_the_game": true
+}
