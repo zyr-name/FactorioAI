@@ -1,0 +1,15 @@
+# Controller-side checkout containing Dockerfile, compose.yaml, and project files.
+factorio_source_dir: "{{ playbook_dir }}/../.."
+
+# The playbook always uses the factorio service account and /home/factorio.
+
+# Keep this pinned to the version used by clients and saves.
+factorio_version: "2.0.77"
+factorio_port: 34197
+factorio_dlc_space_age: false
+
+# Set true only when this host uses UFW and this playbook should manage the rule.
+factorio_manage_firewall: false
+
+# Set this if Docker is installed somewhere other than the normal PATH.
+factorio_docker_bin: docker

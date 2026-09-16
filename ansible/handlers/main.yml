@@ -1,0 +1,6 @@
+---
+- name: Restart Factorio service
+  ansible.builtin.systemd:
+    name: factorio.service
+    state: restarted
+    daemon_reload: true
