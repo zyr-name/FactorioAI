@@ -1,4 +1,172 @@
-# Factorio server
+# FactorioAI
+
+A playground for AI-controlled Factorio companions: build factories together,
+learn how game automation and planning work, and compare different models.
+The aim is a longer hobby project with small, visible weekly improvements and
+individually testable parts.
+
+## Project plan and progress
+
+This roadmap captures the original Codex discussion, **“Plan multiplayer
+Factorio AI”**, including its later refinements: start with **one character**,
+use **base Factorio**, run the Python controller and local model on the
+workstation, and start the companion manually. Multiple cooperating characters
+come later.
+
+Status reviewed on **2026-09-16**, using this repository and the project
+conversation history. Checked items have implementation or reported verification
+behind them; unchecked items are pending or have not yet been verified. Earlier
+test results and deployment reports are historical, not a fresh production test.
+
+### Intended setup
+
+| Location | Responsibility |
+| --- | --- |
+| Ubuntu server, i9-13900T, 32 GB RAM, no GPU | Persistent headless Factorio world and the planned Lua control mod |
+| Ubuntu workstation, RTX 4080 SUPER, 16 GB VRAM | Planned Python controller, navigation, local model inference through Ollama, and experiment logs |
+| Your Factorio client | Play alongside the companion and observe its actions |
+| Separate infrastructure repository | Host provisioning through your existing Ansible deployment |
+
+The companion will be a named, mod-controlled character in the shared world;
+it need not appear as a separately authenticated multiplayer client. Its full
+control and persistence lifecycle still needs a feasibility test.
+
+The intended workflow is to join the world, manually start the agent, give it a
+small job, and stop it with Ctrl+C. Stopping or losing the controller connection
+must stop character actions while preserving its position and inventory.
+
+Host provisioning stays in the separate Ansible repository. Changes there require
+an explicit request, and you handle its commits. The examples bundled here support
+deployment of this project.
+
+### 0. Server playground — mostly complete
+
+- [x] Create the Git repository and Docker/Compose server setup.
+- [x] Pin the initial base-game version to Factorio 2.0.77.
+- [x] Provide private-server defaults, a generated join password, persistent data,
+  autosaves, and a health check.
+- [x] Provide Ansible deployment files, a dedicated `factorio` account, and a
+  systemd service under `/home/factorio`.
+- [x] Deploy to the Ubuntu server and join from a matching game client
+  (confirmed in the project conversations).
+- [x] Verify image build, startup, saving, and persistence across a container
+  restart in the initial smoke test; add the test to GitHub Actions.
+- [x] Add a backup script and verify archive contents and restart behavior
+  during the initial setup.
+- [x] Document backup, restore, restart, world reset, and changing worlds in
+  [OPERATIONS.md](OPERATIONS.md).
+- [ ] Create and verify a fixed-seed, enemies-disabled test world.
+- [ ] Verify a repeated Ansible deployment preserves the save and makes no
+  unnecessary changes; verify persistence across a host reboot.
+- [ ] Test restoring a checkpoint end to end.
+- [ ] Add a convenient world-reset script or Ansible task that preserves server
+  configuration and credentials.
+
+The later operations discussion prioritized quick reset-and-retry experiments.
+Scheduled and off-server backups are deferred; manual backup support already exists.
+
+### 1. One scripted companion — next AI milestone
+
+- [ ] Build a minimal Lua bridge and Python controller using RCON.
+- [ ] Create one named character with its own inventory and stable identity.
+- [ ] Manually connect, move, stop, and reconnect without using a model.
+- [ ] Preserve the same character, position, and inventory through save/reload.
+- [ ] Stop walking and mining on cancellation or controller disconnection.
+
+**Done when:** you can watch one scripted companion, stop its controller, and
+reconnect to the same character. This is the feasibility checkpoint before
+building the rest of the AI system.
+
+### 2. Navigation and basic game actions
+
+- [ ] Walk to a destination or interaction range; handle obstacles, detours,
+  unreachable targets, newly blocked routes, and getting stuck.
+- [ ] Inspect, mine, craft, place, rotate, transfer items, and cancel actions.
+- [ ] Enforce normal movement, action time, reach, recipes, research,
+  placement rules, and personal inventory capacity in the game bridge.
+- [ ] Give requests character IDs and unique command IDs; expose running,
+  completed, failed, and cancelled states and prevent duplicate effects on retries.
+- [ ] Script a complete furnace sequence using real supplies.
+
+**Done when:** a script produces iron plates with correct ingredient consumption
+and elapsed time, and invalid or repeated commands do not lose or duplicate items.
+
+### 3. World understanding
+
+- [ ] Describe nearby resources, buildings, recipes, inventories, and tasks in
+  compact structured observations.
+- [ ] Detect missing fuel, missing ingredients, and blocked outputs in prepared scenes.
+- [ ] Implement and document observation boundaries, initially local surroundings
+  plus the team's explored map, with close inspection requiring proximity.
+
+**Done when:** small repeatable scenes produce correct, useful diagnoses.
+
+### 4. One model-controlled worker
+
+- [ ] Add an observe → decide → act → verify loop with a replaceable model adapter.
+- [ ] Run a first local model through Ollama on the workstation and measure its
+  suitability; start by evaluating an approximately 8B model.
+- [ ] Let the model choose bounded jobs while Python and Lua execute mechanics.
+- [ ] Complete the first configured job: **produce 20 iron plates from available
+  supplies**, within a decision and time limit.
+- [ ] Show the current task, recent actions, failures, and recovery attempts;
+  support safe pause and stop.
+
+**Done when:** the local model finishes the small production task and recovers
+from simple missing-supply or blocked-action situations.
+
+### 5. Factory designer
+
+- [ ] Propose a small smelting layout and construction sequence.
+- [ ] Validate available materials, placement, reach, and connections before execution.
+- [ ] Build the setup and recover from a failed placement or connection.
+
+**Done when:** the finished setup sustains production, rather than merely placing
+all the requested entities.
+
+### 6. Repeatable model comparisons
+
+- [ ] Maintain a persistent playground and resettable challenge scenarios.
+- [ ] Reload identical starting saves and swap models with the same tools,
+  instructions, supplies, and limits.
+- [ ] Record model identity, task success, sustained production, game and wall-clock
+  time, decisions, cost, failed actions, recovery, waste, and human interventions.
+- [ ] Repeat runs and export readable comparisons; record the simulation timing policy.
+- [ ] Optionally add inexpensive cloud model adapters with explicit spending limits.
+
+**Done when:** one command replays a challenge across models and produces
+comparable results. Comparisons can begin with one character.
+
+### 7. Multiple cooperating characters
+
+- [ ] Add a second character with independent inventory, memory, goals, and model choice.
+- [ ] Add a shared task board, supply requests, item handoffs, and work reservations.
+- [ ] Isolate agent failures and handle a human changing the world mid-task.
+- [ ] Compare identical-model and mixed-model teams with repeated runs and role swaps.
+
+**Done when:** two characters divide a small factory job and complete it without
+repeatedly competing for supplies or rebuilding each other's work.
+
+### 8. Open-source release
+
+- [ ] Choose a license and prepare the repository for public release.
+- [ ] Document the game API contracts, module boundaries, and contribution workflow.
+- [ ] Provide an example scenario and simple setup and manual-start instructions
+  for the complete agent system.
+
+Planned modules are the Lua game bridge, Python world understanding and skills,
+agent runtime and model adapters, cooperation, and experiment records. These are
+code boundaries within one project; they do not require separate services.
+
+### Weekly rhythm
+
+Choose one observable behavior, build a tiny scenario, implement and test it,
+finish with a short play session, and record what was learned. The refined initial
+sequence is companion lifecycle → walking → mining/crafting → scripted furnace →
+local model → status/recovery → tiny factory → model comparison. These are flexible
+weekly targets, not completion dates.
+
+## Current server implementation
 
 A Docker image and Compose deployment for a private Factorio server on Linux.
 The default is vanilla Factorio **2.0.77**, with a generated game password,
