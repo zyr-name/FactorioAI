@@ -1,0 +1,31 @@
+services:
+  factorio:
+    image: factoriotools/factorio:${FACTORIO_VERSION:?Run bin/setup first}
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 120s
+    ports:
+      - "${FACTORIO_BIND:-127.0.0.1}:${FACTORIO_PORT:-34198}:34197/udp"
+    environment:
+      PUID: "${PUID:?Run bin/setup first}"
+      PGID: "${PGID:?Run bin/setup first}"
+      DLC_SPACE_AGE: "${DLC_SPACE_AGE:-false}"
+      LOAD_LATEST_SAVE: "true"
+      GENERATE_NEW_SAVE: "false"
+      UPDATE_MODS_ON_START: "false"
+    volumes:
+      - ./data:/factorio
+    # Scratch files need Linux filesystem semantics on Docker Desktop.
+    tmpfs:
+      - /factorio/temp:mode=1777
+    healthcheck:
+      test: ["CMD", "rcon", "/time"]
+      interval: 5s
+      timeout: 5s
+      start_period: 120s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

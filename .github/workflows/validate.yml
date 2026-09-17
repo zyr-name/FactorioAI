@@ -11,6 +11,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Validate experiment server operations
+        run: |
+          python3 -m unittest discover -s tests -v
+          bin/setup
+          bin/validate
+          for script in bin/*; do sh -n "$script"; done
+          shellcheck bin/*
       - name: Validate configuration and scripts
         run: |
           docker compose config --quiet

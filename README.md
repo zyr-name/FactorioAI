@@ -5,6 +5,35 @@ learn how game automation and planning work, and compare different models.
 The aim is a longer hobby project with small, visible weekly improvements and
 individually testable parts.
 
+## Experiment server and world operations
+
+Requires Python 3.9+, Docker Engine / Docker Desktop and Docker Compose v2+.
+Run on Linux or macOS with a local Docker daemon, as your normal Docker-enabled
+user (no `sudo`). On Apple Silicon, enable Docker's amd64 emulation.
+
+```bash
+bin/setup
+bin/start
+bin/password
+```
+
+Connect from Factorio **2.0.77**, with Space Age disabled, to
+**127.0.0.1:34198**, using the printed password. The first start downloads the
+image and generates a peaceful world. `bin/start` waits for server health.
+
+```bash
+bin/backup
+bin/reset --seed 12345
+bin/backups
+bin/restore server/backups/NAME.tar.gz
+bin/stop
+```
+
+See [operations](OPERATIONS.md) for all commands and recovery behavior, and
+[server setup](server/README.md) for settings, mods, networking and upgrades.
+
+Recovery tests (no Docker needed): `python3 -m unittest discover -s tests -v`.
+
 ## Project plan and progress
 
 This roadmap captures the original Codex discussion, **“Plan multiplayer
@@ -15,7 +44,8 @@ come later.
 
 Status reviewed on **2026-09-16**, using this repository and the project
 conversation history. Checked items have implementation or reported verification
-behind them; unchecked items are pending or have not yet been verified. Earlier
+behind them; unchecked items are pending or have not yet been verified.
+Experiment reset and restore milestones were verified locally on **2026-09-17**. Earlier
 test results and deployment reports are historical, not a fresh production test.
 
 ### Intended setup
@@ -58,9 +88,9 @@ deployment of this project.
 - [ ] Create and verify a fixed-seed, enemies-disabled test world.
 - [ ] Verify a repeated Ansible deployment preserves the save and makes no
   unnecessary changes; verify persistence across a host reboot.
-- [ ] Test restoring a checkpoint end to end.
-- [ ] Add a convenient world-reset script or Ansible task that preserves server
-  configuration and credentials.
+- [x] Test restoring a checkpoint end to end in the local experiment server.
+- [x] Add `bin/reset` with automatic backups, preserving server configuration
+  and credentials; verify reset, save import and restart on the local experiment server.
 
 The later operations discussion prioritized quick reset-and-retry experiments.
 Scheduled and off-server backups are deferred; manual backup support already exists.
@@ -166,7 +196,11 @@ sequence is companion lifecycle → walking → mining/crafting → scripted fur
 local model → status/recovery → tiny factory → model comparison. These are flexible
 weekly targets, not completion dates.
 
-## Current server implementation
+## Existing production server setup
+
+The root-level Docker files below support the existing production deployment.
+For repeatable local experiments, use `server/` and the `bin/` commands above.
+Production operations notes are preserved in [ansible/OPERATIONS.md](ansible/OPERATIONS.md).
 
 A Docker image and Compose deployment for a private Factorio server on Linux.
 The default is vanilla Factorio **2.0.77**, with a generated game password,

@@ -1,182 +1,83 @@
-# Factorio server operations
+# Factorio experiment operations
 
-This guide assumes the Ansible deployment described in `ansible/README.md`.
-Run the commands on the Factorio host, using an account with `sudo` access.
+Run commands from the repository root, or use their absolute paths from
+any directory. They target this checkout's `server/compose.yaml` and `.env`.
+See [server setup](server/README.md) for configuration.
 
-## Important paths
-
-| Purpose | Path |
+| Command | Behavior |
 | --- | --- |
-| Compose installation | `/home/factorio` |
-| Persistent runtime data | `/home/factorio/data` |
-| World save files | `/home/factorio/data/saves` |
-| Server configuration | `/home/factorio/data/config` |
-| Local backup archives | `/home/factorio/backups` |
-| systemd service | `factorio.service` |
+| `bin/setup` | Initialize settings and random passwords; keep existing files |
+| `bin/start` | Start/apply configuration and wait for RCON health |
+| `bin/stop` | Gracefully stop, preserving the current world |
+| `bin/restart` | Stop and start, applying config changes without resetting |
+| `bin/status` | Show container state and health |
+| `bin/logs` | Show the last 100 log lines |
+| `bin/logs -f --tail 200` | Follow logs |
+| `bin/password` | Print the game password |
+| `bin/rcon '/players'` | Send a command through the container's RCON client |
+| `bin/backup` | Back up saves, configuration, mods and script output |
+| `bin/backups` | List backup paths and sizes |
+| `bin/restore PATH.tar.gz` | Restore an archive, with a backup of current data first |
+| `bin/reset` | Back up and remove active saves; keep settings and mods |
+| `bin/reset --seed 12345` | Reset with a particular map seed |
+| `bin/load-save PATH.zip` | Back up and replace all active saves with this world |
+| `bin/validate` | Check Compose and runtime JSON configuration |
+| `bin/pull` | Download the configured image without restarting |
+| `bin/down` | Stop and remove containers/network; preserve data and backups |
+| `bin/factorio --help` | List commands; each command supports `--help` |
 
-The game uses UDP port `34197` by default. A server restart does not change the
-world. A world reset or a newly generated world does.
-
-## Check the server
-
-```bash
-sudo systemctl status factorio --no-pager
-cd /home/factorio
-sudo docker compose ps
-sudo docker compose logs --tail=100 factorio
-```
-
-Follow the live server log with:
-
-```bash
-cd /home/factorio
-sudo docker compose logs -f factorio
-```
-
-## Restart the server, keeping the current world
-
-Use this after changing server configuration or when the server is behaving
-strangely. It leaves all saves untouched.
+## Typical experiment
 
 ```bash
-sudo systemctl restart factorio
-sudo systemctl status factorio --no-pager
+bin/setup
+bin/start
+bin/backup
+# Run an experiment, inspect results, then start over:
+bin/reset --seed 12345
+# Or return to the exact saved state:
+bin/backups
+bin/restore server/backups/NAME.tar.gz
 ```
 
-To stop and start it separately:
+Backups briefly stop a running server to obtain a consistent snapshot and
+restart it afterward. Restore, reset and load-save do the same, first creating
+a `before-*` backup. A stopped instance stays stopped. No interactive
+confirmation is needed, so these commands can be used by experiment scripts.
+Completed backup paths are printed as operations run. Archives are never
+automatically pruned.
+
+If a backup fails, the destructive operation does not proceed. Restore
+validates and extracts its archive into a temporary directory before touching
+the active data. Concurrent mutating commands are rejected with an explicit
+message. Use these commands rather than direct Compose operations so the
+operation lock and consistent-backup behavior remain effective.
+
+Backups contain passwords and should be treated as private. They include game
+image/DLC metadata, but not `.env`, Docker images or this repository's source.
+Temporary unpacked world files and the runtime lock are excluded.
+Restore checks the configured image/DLC against that metadata. It preserves
+local ports and the Compose project name; update `.env` separately for a
+version rollback. Different game versions may not load each other's saves.
+
+## Recovery and troubleshooting
 
 ```bash
-sudo systemctl stop factorio
-sudo systemctl start factorio
+bin/status
+bin/logs --tail 200
+bin/backups
+bin/stop
+bin/restore server/backups/NAME.tar.gz
+bin/start
 ```
 
-## Create a backup
+If a new world, imported save or restored world fails its health check, the
+command exits unsuccessfully and keeps the data for inspection. Read the logs,
+correct the version/mod/config problem or restore the printed `before-*`
+backup. No successful start is reported until RCON responds.
 
-Stop the server first so the archive contains a consistent copy of the runtime
-data. This backs up saves, configuration, and any other persistent Factorio
-data.
+If Docker Desktop cannot find `docker-credential-desktop`, add its tools to
+your shell's PATH (on macOS, usually
+`/Applications/Docker.app/Contents/Resources/bin`) and retry.
 
-```bash
-sudo install -d -o factorio -g factorio -m 0750 /home/factorio/backups
-sudo systemctl stop factorio
-sudo tar -C /home/factorio \
-  -czf "/home/factorio/backups/factorio-data-$(date +%Y%m%d-%H%M%S).tar.gz" \
-  data
-sudo systemctl start factorio
-sudo systemctl status factorio --no-pager
-```
-
-List available backups:
-
-```bash
-sudo ls -lh /home/factorio/backups
-```
-
-These archives are on the same disk as the server. They are useful for trying
-different worlds, but do not protect against loss of the host itself.
-
-## Restore a specific backup
-
-Replace `BACKUP_FILE` below with the archive you want, for example
-`factorio-data-20260916-203000.tar.gz`.
-
-First inspect the archive:
-
-```bash
-sudo tar -tzf "/home/factorio/backups/BACKUP_FILE" | head -30
-```
-
-Then restore it. The current data directory is moved aside instead of deleted,
-so the restore can be undone if necessary.
-
-```bash
-sudo systemctl stop factorio
-sudo mv /home/factorio/data \
-  "/home/factorio/data.before-restore-$(date +%Y%m%d-%H%M%S)"
-sudo tar -C /home/factorio \
-  -xzf "/home/factorio/backups/BACKUP_FILE"
-sudo chown -R factorio:factorio /home/factorio/data
-sudo systemctl start factorio
-sudo systemctl status factorio --no-pager
-```
-
-At this point the server is running the world and configuration from that
-backup. Connect with the same Factorio version used to create the save.
-
-## Reset the world
-
-This removes the active save from the server's save directory while preserving
-the old directory as a rollback copy. It does not remove the server password
-or other configuration.
-
-```bash
-sudo systemctl stop factorio
-sudo mv /home/factorio/data/saves \
-  "/home/factorio/data/saves.before-reset-$(date +%Y%m%d-%H%M%S)"
-sudo install -d -o factorio -g factorio -m 0750 /home/factorio/data/saves
-sudo systemctl start factorio
-sudo systemctl status factorio --no-pager
-```
-
-Whether an empty saves directory automatically creates a new world depends on
-the Compose command and image configuration. If it does not, inspect the
-configured create/start command:
-
-```bash
-cd /home/factorio
-grep -nE 'SAVE|CREATE|START|factorio' compose.yaml .env 2>/dev/null
-```
-
-Use the same world-creation command defined there, then check the logs for the
-new save name.
-
-## Change the world
-
-There are three common cases:
-
-### Return to an earlier world
-
-Restore the corresponding `factorio-data-*.tar.gz` archive using the restore
-procedure above.
-
-### Start a new world with different map generation
-
-Map-generation settings only affect a newly created world; changing them does
-not alter an existing save.
-
-1. Stop the server.
-2. Edit `/home/factorio/data/config/map-gen-settings.json`.
-3. Move the current `/home/factorio/data/saves` directory aside as shown in
-   the reset procedure.
-4. Create/start the new world using the command configured in `compose.yaml`.
-5. Start the service and verify the new world in the logs.
-
-Keep `server-settings.json` unless you intentionally want to change server
-name, description, visibility, password, or related settings.
-
-### Switch to a separate save file
-
-Copy the save ZIP into the saves directory, then select that save using the
-save-name option already defined by the deployment's `compose.yaml` or `.env`:
-
-```bash
-sudo cp /path/to/world.zip /home/factorio/data/saves/
-sudo chown factorio:factorio /home/factorio/data/saves/world.zip
-cd /home/factorio
-grep -nE 'SAVE|START|factorio' compose.yaml .env 2>/dev/null
-sudo systemctl restart factorio
-```
-
-Do not change map-generation settings expecting them to affect this existing
-save; they are only read when a new map is generated.
-
-## Quick recovery checklist
-
-When an AI experiment damages the world:
-
-1. Stop the server if it is still running.
-2. Reset the saves directory, or restore a chosen backup.
-3. Start the service.
-4. Check `systemctl status` and the Compose logs.
-5. Reconnect using the same server address and Factorio version.
-
+For the separately deployed production server, see the retained
+[production operations notes](ansible/OPERATIONS.md).

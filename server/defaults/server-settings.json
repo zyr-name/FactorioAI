@@ -1,0 +1,13 @@
+{
+  "name": "Factorio AI experiments",
+  "description": "Development world for AI experiments",
+  "visibility": {"public": false, "lan": false},
+  "require_user_verification": true,
+  "game_password": "",
+  "max_players": 8,
+  "autosave_interval": 5,
+  "autosave_slots": 5,
+  "auto_pause": true,
+  "only_admins_can_pause_the_game": true,
+  "allow_commands": "admins-only"
+}
