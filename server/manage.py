@@ -63,7 +63,7 @@ def compose(*args, capture=False):
     # COMPOSE_FILE/PROJECT_NAME or image/port overrides target another instance.
     env = {key: value for key, value in os.environ.items()
            if not key.startswith("COMPOSE_") and key not in {
-               "FACTORIO_VERSION", "FACTORIO_BIND", "FACTORIO_PORT",
+               "FACTORIO_VERSION", "FACTORIO_BIND", "FACTORIO_PORT", "FACTORIO_RCON_PORT",
                "DLC_SPACE_AGE", "PUID", "PGID"}}
     return subprocess.run(
         ["docker", "compose", "--project-directory", str(SERVER),
@@ -249,6 +249,64 @@ def load_save(path):
     print("Loaded world: " + str(path))
 
 
+def install_companion():
+    sys.path.insert(0, str(SERVER.parent))
+    from companion.package import build, SOURCE
+    if not (DATA / "config/server-settings.json").exists():
+        raise ValueError("Run bin/setup first.")
+    info = json.loads((SOURCE / "info.json").read_text())
+    filename = info["name"] + "_" + info["version"] + ".zip"
+    mods = DATA / "mods"
+    mods.mkdir(exist_ok=True)
+    listing = mods / "mod-list.json"
+    settings = DATA / "config/server-settings.json"
+    old_listing = listing.read_bytes() if listing.exists() else None
+    old_settings = settings.read_bytes()
+    mod_list = json.loads(old_listing) if old_listing else {
+        "mods": [{"name": "base", "enabled": True}]
+    }
+    server_settings = json.loads(old_settings)
+    if not isinstance(mod_list.get("mods"), list):
+        raise ValueError("mods/mod-list.json must contain a 'mods' array.")
+    mod_list["mods"] = [
+        mod for mod in mod_list["mods"] if mod.get("name") != info["name"]
+    ]
+    mod_list["mods"].append({"name": info["name"], "enabled": True})
+    server_settings["auto_pause"] = False
+    with tempfile.TemporaryDirectory(prefix=".staging-", dir=SERVER) as temp:
+        staging = Path(temp)
+        archive = build(staging / filename)
+        with stopped():
+            snapshot("before-install-companion")
+            previous = list(mods.glob(info["name"] + "_*"))
+            # An unpacked installation of this same mod would shadow the ZIP.
+            unpacked = mods / info["name"]
+            if unpacked.exists():
+                previous.append(unpacked)
+            moved = []
+            installed = mods / filename
+            try:
+                for path in previous:
+                    target = staging / ("old-" + path.name)
+                    path.rename(target)
+                    moved.append((target, path))
+                archive.rename(installed)
+                write_json(listing, mod_list)
+                write_json(settings, server_settings)
+            except BaseException:
+                installed.unlink(missing_ok=True)
+                if old_listing is None:
+                    listing.unlink(missing_ok=True)
+                else:
+                    listing.write_bytes(old_listing)
+                settings.write_bytes(old_settings)
+                for source, target in reversed(moved):
+                    source.rename(target)
+                raise
+    print("Installed " + filename + "; auto_pause=false so the controller and watchdog can run without players.")
+    print("Game clients need the same mod. Build a copy with bin/companion package.")
+
+
 def parse_seed(value):
     if value == "random":
         return value
@@ -276,6 +334,7 @@ def parser():
         "pull": "Download the configured image without restarting",
         "down": "Remove this instance's container/network, keeping data",
         "validate": "Validate Compose and JSON configuration",
+        "install-companion": "Back up, install the companion mod and disable auto-pause",
     }.items():
         commands.add_parser(name, help=help_text)
     log = commands.add_parser("logs", help="Show recent logs")
@@ -338,6 +397,8 @@ def dispatch(args):
         reset(args.seed)
     elif command == "load-save":
         load_save(args.file.resolve())
+    elif command == "install-companion":
+        install_companion()
     elif command == "rcon":
         compose("exec", "-T", "factorio", "rcon", " ".join(args.text))
     elif command == "pull":

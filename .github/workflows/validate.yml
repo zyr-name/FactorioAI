@@ -26,3 +26,5 @@ jobs:
           python3 -m json.tool config/server-settings.example.json >/dev/null
       - name: Build and test startup and persistence
         run: ./tests/smoke.sh
+      - name: Test scripted companion lifecycle
+        run: python3 tests/companion_smoke.py

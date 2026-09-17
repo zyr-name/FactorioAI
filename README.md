@@ -34,6 +34,24 @@ See [operations](OPERATIONS.md) for all commands and recovery behavior, and
 
 Recovery tests (no Docker needed): `python3 -m unittest discover -s tests -v`.
 
+## Scripted companion
+
+Install the first controllable companion into the experiment server:
+
+```bash
+bin/install-companion
+bin/start
+bin/companion spawn --name Ada
+bin/companion move 5 0 --relative
+bin/companion status
+```
+
+The character, its position, and its inventory persist in the save. The Python
+controller holds a short game-side lease while moving; Ctrl+C stops immediately,
+and an ungraceful disconnect stops within 180 simulation ticks. See the
+[companion guide](companion/README.md) for client mod installation, interactive
+control, remote access, and the full safety model.
+
 ## Project plan and progress
 
 This roadmap captures the original Codex discussion, **“Plan multiplayer
@@ -85,7 +103,7 @@ deployment of this project.
   during the initial setup.
 - [x] Document backup, restore, restart, world reset, and changing worlds in
   [OPERATIONS.md](OPERATIONS.md).
-- [ ] Create and verify a fixed-seed, enemies-disabled test world.
+- [x] Create and verify a fixed-seed, enemies-disabled disposable test world.
 - [ ] Verify a repeated Ansible deployment preserves the save and makes no
   unnecessary changes; verify persistence across a host reboot.
 - [x] Test restoring a checkpoint end to end in the local experiment server.
@@ -95,17 +113,17 @@ deployment of this project.
 The later operations discussion prioritized quick reset-and-retry experiments.
 Scheduled and off-server backups are deferred; manual backup support already exists.
 
-### 1. One scripted companion — next AI milestone
+### 1. One scripted companion — complete locally
 
-- [ ] Build a minimal Lua bridge and Python controller using RCON.
-- [ ] Create one named character with its own inventory and stable identity.
-- [ ] Manually connect, move, stop, and reconnect without using a model.
-- [ ] Preserve the same character, position, and inventory through save/reload.
-- [ ] Stop walking and mining on cancellation or controller disconnection.
+- [x] Build a minimal Lua bridge and Python controller using RCON.
+- [x] Create one named character with its own inventory and stable identity.
+- [x] Connect, move, stop, and reconnect without using a model.
+- [x] Preserve the same character, position, and inventory through save/reload.
+- [x] Stop walking, mining, and shooting on cancellation or controller loss.
 
-**Done when:** you can watch one scripted companion, stop its controller, and
-reconnect to the same character. This is the feasibility checkpoint before
-building the rest of the AI system.
+Verified with a disposable real server on **2026-09-17**, including collisions,
+Ctrl+C, forced controller termination, and server restart. The remaining manual
+check is watching the character from a matching modded game client.
 
 ### 2. Navigation and basic game actions
 

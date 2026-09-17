@@ -1,0 +1,1 @@
+"""Scripted Factorio companion controller."""
