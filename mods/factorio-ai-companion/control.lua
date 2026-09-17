@@ -11,6 +11,22 @@ local function valid_character()
   return companion and companion.entity and companion.entity.valid and companion.entity or nil
 end
 
+local function statistics_for(companion, entity)
+  companion.statistics = companion.statistics or {}
+  local statistics = companion.statistics
+  statistics.spawned_tick = statistics.spawned_tick or game.tick
+  statistics.connected_ticks = statistics.connected_ticks or 0
+  statistics.distance_tiles = statistics.distance_tiles or 0
+  statistics.moves_started = statistics.moves_started or 0
+  statistics.moves_completed = statistics.moves_completed or 0
+  statistics.moves_blocked = statistics.moves_blocked or 0
+  statistics.moves_stopped = statistics.moves_stopped or 0
+  if entity and not statistics.last_position then
+    statistics.last_position = {x = entity.position.x, y = entity.position.y}
+  end
+  return statistics
+end
+
 local function halt(reason)
   local entity = valid_character()
   if entity then
@@ -22,6 +38,14 @@ local function halt(reason)
   if companion and companion.motion and companion.motion.state == "moving" then
     companion.motion.state = reason
     companion.motion.finished_tick = game.tick
+    local statistics = statistics_for(companion, entity)
+    if reason == "arrived" then
+      statistics.moves_completed = statistics.moves_completed + 1
+    elseif reason == "blocked" then
+      statistics.moves_blocked = statistics.moves_blocked + 1
+    elseif reason ~= "superseded" then
+      statistics.moves_stopped = statistics.moves_stopped + 1
+    end
   end
 end
 
@@ -72,6 +96,16 @@ local function status()
     result.id = companion.id
     result.name = companion.name
     result.motion = companion.motion or {state = "idle"}
+    local statistics = statistics_for(companion, entity)
+    result.statistics = {
+      spawned_tick = statistics.spawned_tick or game.tick,
+      connected_ticks = statistics.connected_ticks or 0,
+      distance_tiles = statistics.distance_tiles or 0,
+      moves_started = statistics.moves_started or 0,
+      moves_completed = statistics.moves_completed or 0,
+      moves_blocked = statistics.moves_blocked or 0,
+      moves_stopped = statistics.moves_stopped or 0
+    }
   end
   if entity then
     result.position = {x = entity.position.x, y = entity.position.y}
@@ -125,7 +159,14 @@ local function spawn(request)
   local entity = surface.create_entity{name = "character", position = position, force = "player"}
   if not entity then fail("spawn_failed", "Could not create the companion.") end
   entity.color = {r = 0.15, g = 0.85, b = 0.9}
-  bridge.companion = {entity = entity, id = tostring(entity.unit_number), name = name}
+  bridge.companion = {
+    entity = entity, id = tostring(entity.unit_number), name = name,
+    statistics = {
+      spawned_tick = game.tick, connected_ticks = 0, distance_tiles = 0,
+      moves_started = 0, moves_completed = 0, moves_blocked = 0, moves_stopped = 0,
+      last_position = {x = entity.position.x, y = entity.position.y}
+    }
+  }
   bridge.companion.label = rendering.draw_text{
     text = name, surface = surface, target = {entity = entity, offset = {0, -2.5}},
     color = entity.color, alignment = "center", scale = 1.2
@@ -176,6 +217,8 @@ local function dispatch(request)
       started_tick = game.tick, deadline_tick = game.tick + 3600,
       progress_tick = game.tick, progress_position = {x = position.x, y = position.y}
     }
+    local statistics = statistics_for(companion, companion.entity)
+    statistics.moves_started = statistics.moves_started + 1
     return status()
   end
   fail("unknown_action", "Unknown companion action.")
@@ -222,6 +265,14 @@ script.on_event(defines.events.on_tick, function()
     return
   end
   local motion = companion.motion
+  local statistics = statistics_for(companion, entity)
+  statistics.connected_ticks = statistics.connected_ticks + (bridge.session and 1 or 0)
+  local last = statistics.last_position
+  if last then
+    local moved_x, moved_y = entity.position.x - last.x, entity.position.y - last.y
+    statistics.distance_tiles = (statistics.distance_tiles or 0) + math.sqrt(moved_x * moved_x + moved_y * moved_y)
+  end
+  statistics.last_position = {x = entity.position.x, y = entity.position.y}
   if not bridge.session or not motion or motion.state ~= "moving" then return end
   local position = entity.position
   local dx, dy = motion.target.x - position.x, motion.target.y - position.y

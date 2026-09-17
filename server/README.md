@@ -12,11 +12,13 @@ Install Docker with Compose v2+ and Python 3.9+. Start Docker, then run from
 the repository root:
 
 ```bash
-bin/setup
-bin/validate
 bin/start
-bin/password
 ```
+
+This starts the complete local stack and prints the management-portal address.
+Use the portal for configuration, logs, recovery operations, and AI players.
+For server-only automation, the equivalent low-level sequence is
+`bin/setup`, `bin/validate`, then `bin/factorio start`.
 
 The scripts also work from other directories when invoked by their full path.
 Use a local Docker daemon: filesystem operations act on this machine's files.
@@ -80,7 +82,7 @@ set, so a newer autosave cannot override your selected world. Imported saves
 must match the configured game version, DLC and installed mods.
 
 These commands preserve whether the server was running. When stopped, the
-new world is created/loaded on the next `bin/start`. `restore` replaces all
+new world is created/loaded on the next `bin/factorio start`. `restore` replaces all
 runtime data, including settings, mods and passwords; it keeps the local
 instance's `.env` and networking. Only archives produced by `bin/backup` are
 accepted. Use `bin/load-save` for a save ZIP from another server.
@@ -105,7 +107,7 @@ the scripts; edit `.env` instead.
 1. Run `bin/backup` before changing versions or DLC.
 2. Run `bin/stop`.
 3. Edit `FACTORIO_VERSION` or `DLC_SPACE_AGE` in `.env`.
-4. Run `bin/pull`, then `bin/start`.
+4. Run `bin/pull`, then `bin/factorio start` (or use Start server in the portal).
 5. Use a matching game client and check `bin/logs`.
 
 For rollback, stop the server, set the version and DLC back to those recorded
