@@ -8,6 +8,7 @@ See [server setup](server/README.md) for configuration.
 | --- | --- |
 | `bin/setup` | Initialize settings and random passwords; keep existing files |
 | `bin/start` | Start the server and local portal at `http://127.0.0.1:8765` |
+| `bin/start --lan` | Also expose the unauthenticated portal to the trusted local network |
 | `bin/portal` | Start only the portal, preserving current server state |
 | `bin/factorio start` | Start/apply server configuration and wait for RCON health |
 | `bin/stop` | Gracefully stop, preserving the current world |

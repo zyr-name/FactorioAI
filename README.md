@@ -27,6 +27,11 @@ safe world resets, AI-player lifecycle, and persistent run/lifetime statistics.
 All state stays in this checkout. The portal is deliberately bound to localhost
 and has no remote-server dependency.
 
+To open the portal from another device on the same trusted LAN, run
+`bin/start --lan` and use this computer's private IP with port 8765. LAN mode
+has no authentication, so do not use it on an untrusted network or expose the
+port through the router.
+
 Connect from Factorio **2.0.77**, with Space Age disabled, to
 **127.0.0.1:34198**. Read the generated join password with `bin/password`.
 The first start downloads the image and generates a peaceful world.

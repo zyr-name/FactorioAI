@@ -31,10 +31,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--lan", action="store_true", help="Allow other devices on the local network")
     parser.add_argument("--no-server", action="store_true", help="Start only the portal")
     args = parser.parse_args(argv)
-    if args.host != "127.0.0.1":
-        parser.error("Only local portal binding is supported until authentication is configured.")
+    if args.lan:
+        args.host = "0.0.0.0"
+    if args.host not in {"127.0.0.1", "0.0.0.0"}:
+        parser.error("Use the default local binding or --lan.")
+    if args.host == "0.0.0.0":
+        print("Warning: portal controls are available to devices on this LAN without authentication.", flush=True)
     startup_error = None
     if not args.no_server:
         try:
