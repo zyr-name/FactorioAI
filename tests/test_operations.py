@@ -145,6 +145,24 @@ class RecoveryTests(unittest.TestCase):
             manage.snapshot("test")
         self.assertEqual(list(manage.BACKUPS.iterdir()), [])
 
+    def test_companion_install_is_repeatable_and_preserves_other_mods(self):
+        mods = manage.DATA / "mods"
+        (mods / "other_1.0.0.zip").write_bytes(b"other")
+        (mods / "mod-list.json").write_text(json.dumps({"mods": [
+            {"name": "base", "enabled": True},
+            {"name": "other", "enabled": True},
+        ]}))
+        manage.install_companion()
+        manage.install_companion()
+        listing = json.loads((mods / "mod-list.json").read_text())["mods"]
+        self.assertEqual([mod["name"] for mod in listing], [
+            "base", "other", "factorio-ai-companion",
+        ])
+        self.assertEqual((mods / "other_1.0.0.zip").read_bytes(), b"other")
+        self.assertEqual(len(list(mods.glob("factorio-ai-companion_*.zip"))), 1)
+        settings = json.loads((manage.DATA / "config/server-settings.json").read_text())
+        self.assertFalse(settings["auto_pause"])
+
 
 if __name__ == "__main__":
     unittest.main()

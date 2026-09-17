@@ -16,3 +16,4 @@ server/.operations.lock
 server/.staging-*/
 __pycache__/
 *.pyc
+/dist/

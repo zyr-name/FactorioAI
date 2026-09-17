@@ -55,9 +55,14 @@ editing runtime files, then run `bin/validate` and `bin/start`.
 
 The server pauses when no players are connected by default. For experiments
 that must continue without players, set `auto_pause` to `false` in
-`data/config/server-settings.json`. RCON runs inside the container; its TCP
-port is not published. Use `bin/rcon '/help'`. Lua console commands can disable
-achievements on the experimental world.
+`data/config/server-settings.json`. RCON is published only to localhost for the
+Python companion controller. Use `bin/rcon '/help'` for container-local
+administration. Lua console commands can disable achievements on the
+experimental world.
+
+Install the scripted companion with `bin/install-companion`, then follow the
+[companion guide](../companion/README.md). The installer backs up first and
+disables auto-pause so the lease watchdog keeps running without human players.
 
 ## Change worlds
 

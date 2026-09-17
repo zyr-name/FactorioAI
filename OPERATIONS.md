@@ -15,6 +15,9 @@ See [server setup](server/README.md) for configuration.
 | `bin/logs -f --tail 200` | Follow logs |
 | `bin/password` | Print the game password |
 | `bin/rcon '/players'` | Send a command through the container's RCON client |
+| `bin/install-companion` | Back up, install/enable the companion mod, disable auto-pause |
+| `bin/companion status` | Inspect the persistent companion and controller lease |
+| `bin/companion stop` | Emergency-stop the companion and revoke its lease |
 | `bin/backup` | Back up saves, configuration, mods and script output |
 | `bin/backups` | List backup paths and sizes |
 | `bin/restore PATH.tar.gz` | Restore an archive, with a backup of current data first |

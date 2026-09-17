@@ -1,0 +1,9 @@
+{
+  "name": "factorio-ai-companion",
+  "version": "0.1.0",
+  "title": "Factorio AI Companion",
+  "author": "FactorioAI",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0.77"],
+  "description": "One persistent character controlled through a small RCON bridge."
+}

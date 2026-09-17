@@ -6,6 +6,7 @@ services:
     stop_grace_period: 120s
     ports:
       - "${FACTORIO_BIND:-127.0.0.1}:${FACTORIO_PORT:-34198}:34197/udp"
+      - "127.0.0.1:${FACTORIO_RCON_PORT:-27016}:27015/tcp"
     environment:
       PUID: "${PUID:?Run bin/setup first}"
       PGID: "${PGID:?Run bin/setup first}"
