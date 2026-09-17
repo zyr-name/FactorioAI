@@ -7,7 +7,9 @@ See [server setup](server/README.md) for configuration.
 | Command | Behavior |
 | --- | --- |
 | `bin/setup` | Initialize settings and random passwords; keep existing files |
-| `bin/start` | Start/apply configuration and wait for RCON health |
+| `bin/start` | Start the server and local portal at `http://127.0.0.1:8765` |
+| `bin/portal` | Start only the portal, preserving current server state |
+| `bin/factorio start` | Start/apply server configuration and wait for RCON health |
 | `bin/stop` | Gracefully stop, preserving the current world |
 | `bin/restart` | Stop and start, applying config changes without resetting |
 | `bin/status` | Show container state and health |
@@ -32,12 +34,21 @@ See [server setup](server/README.md) for configuration.
 ## Typical experiment
 
 ```bash
-bin/setup
 bin/start
+```
+
+Keep this command running and use the portal for the usual workflow. It starts
+the server and portal, then supervises AI-player processes launched from the UI.
+Ctrl-C stops the portal and its AI-player processes; the Dockerized Factorio
+server keeps its current state. This makes an accidental terminal close safe
+and lets `bin/portal` reconnect later. Use `bin/stop` when the game server should
+also stop.
+
+The individual commands below remain available for scripts:
+
+```bash
 bin/backup
-# Run an experiment, inspect results, then start over:
 bin/reset --seed 12345
-# Or return to the exact saved state:
 bin/backups
 bin/restore server/backups/NAME.tar.gz
 ```
@@ -70,7 +81,7 @@ bin/logs --tail 200
 bin/backups
 bin/stop
 bin/restore server/backups/NAME.tar.gz
-bin/start
+bin/factorio start
 ```
 
 If a new world, imported save or restored world fails its health check, the

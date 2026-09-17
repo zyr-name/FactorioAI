@@ -5,21 +5,31 @@ learn how game automation and planning work, and compare different models.
 The aim is a longer hobby project with small, visible weekly improvements and
 individually testable parts.
 
-## Experiment server and world operations
+## One-command local stack
 
 Requires Python 3.9+, Docker Engine / Docker Desktop and Docker Compose v2+.
 Run on Linux or macOS with a local Docker daemon, as your normal Docker-enabled
 user (no `sudo`). On Apple Silicon, enable Docker's amd64 emulation.
 
 ```bash
-bin/setup
 bin/start
-bin/password
 ```
 
+This initializes the local instance, installs the companion bridge, starts the
+Factorio server, and serves the management portal at
+**http://127.0.0.1:8765**. Keep the command running while using the portal;
+Ctrl-C stops the portal and managed AI-player processes, while preserving the
+current Factorio server state. Use `bin/portal` when the server is already in
+the desired state.
+
+The portal manages server configuration and logs, manual backups and restores,
+safe world resets, AI-player lifecycle, and persistent run/lifetime statistics.
+All state stays in this checkout. The portal is deliberately bound to localhost
+and has no remote-server dependency.
+
 Connect from Factorio **2.0.77**, with Space Age disabled, to
-**127.0.0.1:34198**, using the printed password. The first start downloads the
-image and generates a peaceful world. `bin/start` waits for server health.
+**127.0.0.1:34198**. Read the generated join password with `bin/password`.
+The first start downloads the image and generates a peaceful world.
 
 ```bash
 bin/backup
@@ -36,11 +46,11 @@ Recovery tests (no Docker needed): `python3 -m unittest discover -s tests -v`.
 
 ## Scripted companion
 
-Install the first controllable companion into the experiment server:
+The one-command stack installs the first controllable companion automatically.
+It can be started and stopped in the portal. The lower-level CLI remains useful
+for direct movement tests:
 
 ```bash
-bin/install-companion
-bin/start
 bin/companion spawn --name Ada
 bin/companion move 5 0 --relative
 bin/companion status
@@ -54,11 +64,9 @@ control, remote access, and the full safety model.
 
 ## Project plan and progress
 
-This roadmap captures the original Codex discussion, **“Plan multiplayer
-Factorio AI”**, including its later refinements: start with **one character**,
-use **base Factorio**, run the Python controller and local model on the
-workstation, and start the companion manually. Multiple cooperating characters
-come later.
+This roadmap now assumes one local machine: start with **one character**, use
+**base Factorio**, and run the server, portal, controller, and future local model
+together. Multiple cooperating characters come later.
 
 Status reviewed on **2026-09-16**, using this repository and the project
 conversation history. Checked items have implementation or reported verification
@@ -70,22 +78,17 @@ test results and deployment reports are historical, not a fresh production test.
 
 | Location | Responsibility |
 | --- | --- |
-| Ubuntu server, i9-13900T, 32 GB RAM, no GPU | Persistent headless Factorio world and the planned Lua control mod |
-| Ubuntu workstation, RTX 4080 SUPER, 16 GB VRAM | Planned Python controller, navigation, local model inference through Ollama, and experiment logs |
-| Your Factorio client | Play alongside the companion and observe its actions |
-| Separate infrastructure repository | Host provisioning through your existing Ansible deployment |
+| Current Mac | Dockerized Factorio, management portal, controllers, data, and experiment history |
+| Factorio client | Play alongside the companion and observe its actions |
+| Future Linux workstation | Run the same checkout and local stack when more compute is useful |
 
-The companion will be a named, mod-controlled character in the shared world;
-it need not appear as a separately authenticated multiplayer client. Its full
-control and persistence lifecycle still needs a feasibility test.
+The companion is a named, mod-controlled character in the shared world; it does
+not appear as a separately authenticated multiplayer client.
 
-The intended workflow is to join the world, manually start the agent, give it a
-small job, and stop it with Ctrl+C. Stopping or losing the controller connection
-must stop character actions while preserving its position and inventory.
-
-Host provisioning stays in the separate Ansible repository. Changes there require
-an explicit request, and you handle its commits. The examples bundled here support
-deployment of this project.
+The intended workflow is to run `bin/start`, join the world, start the agent in
+the portal, give it a small job, and stop it there. Stopping or losing the
+controller connection stops character actions while preserving its position and
+inventory. Remote provisioning is outside the active workflow.
 
 ### 0. Server playground — mostly complete
 
@@ -214,11 +217,12 @@ sequence is companion lifecycle → walking → mining/crafting → scripted fur
 local model → status/recovery → tiny factory → model comparison. These are flexible
 weekly targets, not completion dates.
 
-## Existing production server setup
+## Archived remote deployment reference
 
-The root-level Docker files below support the existing production deployment.
-For repeatable local experiments, use `server/` and the `bin/` commands above.
-Production operations notes are preserved in [ansible/OPERATIONS.md](ansible/OPERATIONS.md).
+The material below is retained only as historical reference. It is not part of
+the active workflow and `bin/start` never contacts or deploys to a remote host.
+For all current work, use the local portal and `server/` runtime described above.
+Older production operations notes remain in [ansible/OPERATIONS.md](ansible/OPERATIONS.md).
 
 A Docker image and Compose deployment for a private Factorio server on Linux.
 The default is vanilla Factorio **2.0.77**, with a generated game password,

@@ -6,16 +6,16 @@ controller sends versioned JSON commands over RCON.
 
 ## Install and run
 
-Initialize the experiment server first, then install the mod:
+The complete local stack installs the mod automatically:
 
 ```bash
-bin/setup
-bin/install-companion
 bin/start
-bin/companion spawn --name Ada
-bin/companion status
-bin/companion move 5 0 --relative
 ```
+
+Start Ada in the portal's **AI Players** section. The portal holds the controller
+lease, records each run, and shows the game-side lifetime movement counters.
+For direct CLI testing, stop Ada in the portal first, then use
+`bin/companion status` or `bin/companion move 5 0 --relative`.
 
 `install-companion` creates a complete backup, installs/enables the mod, and
 sets `auto_pause=false` so movement and the disconnect watchdog continue when
@@ -28,7 +28,7 @@ Every joining game client needs the same mod ZIP. Build it with:
 bin/companion package
 ```
 
-Copy `dist/factorio-ai-companion_0.1.0.zip` into the Factorio client's `mods`
+Copy the generated `dist/factorio-ai-companion_0.2.0.zip` into the Factorio client's `mods`
 directory. On macOS that is normally
 `~/Library/Application Support/factorio/mods/`. Restart Factorio after copying.
 

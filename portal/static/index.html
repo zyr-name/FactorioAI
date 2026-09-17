@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FactorioAI Control Room</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#overview"><span class="brand-mark">F</span><span>Factorio<span class="accent">AI</span></span></a>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#server">Server</a>
+      <a href="#players">AI Players</a>
+    </nav>
+    <div class="live"><span id="live-dot" class="dot"></span><span id="live-label">Connecting</span></div>
+  </header>
+
+  <main>
+    <section id="overview" class="hero">
+      <div>
+        <p class="eyebrow">LOCAL CONTROL ROOM</p>
+        <h1>One world.<br><span>One place to run it.</span></h1>
+        <p class="lede">Manage the Factorio server, protect the world, and supervise every AI player from one local dashboard.</p>
+      </div>
+      <div class="hero-status card">
+        <div class="card-label">SERVER STATUS</div>
+        <div class="status-line"><span id="server-indicator" class="status-orb"></span><strong id="server-state">Loading</strong></div>
+        <p id="server-detail" class="muted">Reading Docker state…</p>
+        <div class="button-row">
+          <button data-server-action="start" class="primary">Start server</button>
+          <button data-server-action="stop">Stop</button>
+          <button data-server-action="restart">Restart</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="At a glance">
+      <article><span class="metric-label">AI PLAYERS</span><strong id="metric-players">—</strong><small id="metric-players-note">configured</small></article>
+      <article><span class="metric-label">BACKUPS</span><strong id="metric-backups">—</strong><small>available locally</small></article>
+      <article><span class="metric-label">GAME VERSION</span><strong id="metric-version">—</strong><small>pinned runtime</small></article>
+      <article><span class="metric-label">WORLD SAFETY</span><strong id="metric-safety">Ready</strong><small>automatic pre-change backups</small></article>
+    </section>
+
+    <section id="server" class="section">
+      <div class="section-heading">
+        <div><p class="eyebrow">INFRASTRUCTURE</p><h2>Server management</h2></div>
+        <button id="refresh">Refresh state</button>
+      </div>
+
+      <div class="grid two">
+        <article class="card">
+          <div class="card-label">CONFIGURATION</div>
+          <form id="configuration-form" class="form-grid">
+            <label>Factorio version<input name="FACTORIO_VERSION" autocomplete="off"></label>
+            <label>Game port<input name="FACTORIO_PORT" type="number" min="1" max="65535"></label>
+            <label>RCON port<input name="FACTORIO_RCON_PORT" type="number" min="1" max="65535"></label>
+            <label class="toggle-row"><input name="DLC_SPACE_AGE" type="checkbox"><span>Enable Space Age</span></label>
+            <label class="wide">Server settings JSON<textarea name="server_settings" spellcheck="false" rows="12"></textarea></label>
+            <div class="wide form-actions"><span class="muted">Changes apply after restart.</span><button class="primary" type="submit">Save configuration</button></div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-title-row"><div><div class="card-label">LIVE LOG</div><h3>Factorio output</h3></div><button id="refresh-logs">Refresh</button></div>
+          <pre id="logs" class="log">Loading logs…</pre>
+        </article>
+      </div>
+
+      <div class="grid two lower">
+        <article class="card">
+          <div class="card-title-row"><div><div class="card-label">RECOVERY</div><h3>Backups</h3></div><button data-server-action="backup" class="primary">Create backup</button></div>
+          <div id="backup-list" class="backup-list"></div>
+        </article>
+        <article class="card danger-card">
+          <div class="card-label">WORLD OPERATIONS</div>
+          <h3>Reset the test world</h3>
+          <p class="muted">A checkpoint is created first. Configuration, credentials, and mods are kept.</p>
+          <div class="button-row wrap"><input id="reset-seed" placeholder="Seed or random"><button id="reset-world" class="danger">Backup &amp; reset</button></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="players" class="section">
+      <div class="section-heading">
+        <div><p class="eyebrow">AUTOMATION</p><h2>AI players</h2></div>
+        <p class="muted narrow">The current game bridge allows one active controller. More player profiles can be added as the bridge grows.</p>
+      </div>
+      <div id="players-list"></div>
+    </section>
+  </main>
+
+  <div id="toast" role="status"></div>
+  <dialog id="confirm-dialog">
+    <form method="dialog">
+      <div class="card-label">PLEASE CONFIRM</div>
+      <h3 id="confirm-title">Continue?</h3>
+      <p id="confirm-message" class="muted"></p>
+      <div class="button-row end"><button value="cancel">Cancel</button><button value="confirm" class="danger">Continue</button></div>
+    </form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>

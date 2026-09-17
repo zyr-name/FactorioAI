@@ -55,7 +55,7 @@ def main():
         config.mkdir(parents=True)
         mods = data / "mods"
         mods.mkdir()
-        build(mods / "factorio-ai-companion_0.1.0.zip")
+        build(mods / "factorio-ai-companion_0.2.0.zip")
         (mods / "mod-list.json").write_text(json.dumps({"mods": [
             {"name": "base", "enabled": True}, {"name": "factorio-ai-companion", "enabled": True}]}))
         settings = json.loads((ROOT / "server/defaults/server-settings.json").read_text())

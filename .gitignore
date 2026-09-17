@@ -13,6 +13,9 @@ server/.env
 server/data/
 server/backups/
 server/.operations.lock
+server/portal.sqlite3
+server/portal.sqlite3-shm
+server/portal.sqlite3-wal
 server/.staging-*/
 __pycache__/
 *.pyc

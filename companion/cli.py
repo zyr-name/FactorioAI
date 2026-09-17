@@ -10,7 +10,7 @@ import sys
 import time
 
 from companion.client import BridgeError, Companion
-from companion.package import build
+from companion.package import build, SOURCE
 from companion.rcon import RconClient, RconError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +42,11 @@ def parser():
     move.add_argument("y", type=coordinate)
     move.add_argument("--relative", action="store_true", help="Treat coordinates as offsets")
     package = commands.add_parser("package", help="Build the mod ZIP for server/client installation")
-    package.add_argument("--output", type=Path, default=ROOT / "dist/factorio-ai-companion_0.1.0.zip")
+    package_info = json.loads((SOURCE / "info.json").read_text())
+    package.add_argument(
+        "--output", type=Path,
+        default=ROOT / "dist" / (package_info["name"] + "_" + package_info["version"] + ".zip"),
+    )
     return root
 
 
