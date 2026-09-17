@@ -7,3 +7,12 @@
 /backups/
 *.log
 .DS_Store
+
+# Local experiment server
+server/.env
+server/data/
+server/backups/
+server/.operations.lock
+server/.staging-*/
+__pycache__/
+*.pyc
