@@ -13,7 +13,8 @@ bin/start
 ```
 
 Start Ada in the portal's **AI Players** section. The portal holds the controller
-lease, records each run, and shows the game-side lifetime movement counters.
+lease, records each run, and shows game-side lifetime movement, mining, crafting,
+placement, and transfer counters.
 For direct CLI testing, stop Ada in the portal first, then use
 `bin/companion status` or `bin/companion move 5 0 --relative`.
 
@@ -28,7 +29,7 @@ Every joining game client needs the same mod ZIP. Build it with:
 bin/companion package
 ```
 
-Copy the generated `dist/factorio-ai-companion_0.3.0.zip` into the Factorio client's `mods`
+Copy the generated `dist/factorio-ai-companion_0.4.0.zip` into the Factorio client's `mods`
 directory. On macOS that is normally
 `~/Library/Application Support/factorio/mods/`. Restart Factorio after copying.
 
@@ -41,6 +42,12 @@ directory. On macOS that is normally
 | `bin/companion move X Y` | Walk to an absolute point and wait for arrival |
 | `bin/companion move DX DY --relative` | Walk by an offset and wait for arrival |
 | `bin/companion move X Y --radius 3` | Walk to any reachable point within interaction range |
+| `bin/companion inspect X Y --radius 8` | List nearby entities and inventories that are within reach |
+| `bin/companion mine X Y --name iron-ore` | Mine a reachable entity using its normal mining time |
+| `bin/companion craft stone-furnace --count 1` | Hand-craft an enabled recipe with inventory ingredients |
+| `bin/companion place stone-furnace X Y` | Consume and place an inventory item within build reach |
+| `bin/companion rotate X Y --name transport-belt` | Rotate a reachable entity |
+| `bin/companion transfer to source iron-ore 1 X Y` | Move items to/from a chest, fuel, source, result, input, or output inventory |
 | `bin/companion stop` | Stop immediately and revoke any controller lease |
 | `bin/companion connect` | Interactive status/movement session |
 
@@ -50,10 +57,14 @@ is killed or loses RCON, the game-side lease expires after 180 simulation ticks
 (normally three seconds) and stops walking, mining, and shooting. Loading a save
 also revokes any saved lease on its first tick.
 
-Only one controller can hold the lease. A movement command is limited to 256
+Only one controller can hold the lease. Movement, mining, and crafting are
+long-running actions; starting another action cancels the active one. A movement command is limited to 256
 tiles and uses Factorio's native pathfinder with the character's real collision
 rules. It detours around static obstacles and replans up to three times if the
-world changes or progress stalls. Every command ID is idempotent and retains a
+world changes or progress stalls. Mining uses the prototype's mining time and
+the character/force mining speed before Factorio performs the yield and capacity
+check. Crafting and furnace processing use Factorio's native queues and recipes.
+Every command ID is idempotent and retains a
 bounded queued/running/completed/failed/cancelled action record.
 
 For a remote development server, keep RCON private and forward it over SSH:
@@ -82,5 +93,6 @@ python3 tests/companion_smoke.py
 ```
 
 It verifies idempotent spawning, inventory preservation, normal movement,
-collision blocking, exclusive control, duplicate move handling, emergency stop,
-Ctrl+C cleanup, forced-process-death cleanup, and save/restart/reconnect.
+collision blocking, exclusive control, duplicate handling, emergency stop,
+craft cancellation/refunds, inspect/mine/craft/place/rotate/transfer, a timed
+furnace-to-iron-plate sequence, forced-process-death cleanup, and save/restart/reconnect.

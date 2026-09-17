@@ -137,15 +137,17 @@ check is watching the character from a matching modded game client.
 
 - [x] Walk to a destination or interaction range; handle obstacles, detours,
   unreachable targets, newly blocked routes, and getting stuck.
-- [ ] Inspect, mine, craft, place, rotate, transfer items, and cancel actions.
-- [ ] Enforce normal movement, action time, reach, recipes, research,
+- [x] Inspect, mine, craft, place, rotate, transfer items, and cancel actions.
+- [x] Enforce normal movement, action time, reach, recipes, research,
   placement rules, and personal inventory capacity in the game bridge.
 - [x] Give requests character IDs and unique command IDs; expose running,
   completed, failed, and cancelled states and prevent duplicate effects on retries.
-- [ ] Script a complete furnace sequence using real supplies.
+- [x] Script a complete furnace sequence using real supplies.
 
-**Done when:** a script produces iron plates with correct ingredient consumption
-and elapsed time, and invalid or repeated commands do not lose or duplicate items.
+Verified in a disposable Factorio 2.0.77 world on **2026-09-17**: a script mines
+ore, crafts and places a furnace, loads fuel and ore, waits for normal smelting,
+and retrieves one plate. Cancellation refunds ingredients, while repeated command
+IDs do not lose or duplicate items or entities.
 
 ### 3. World understanding
 
