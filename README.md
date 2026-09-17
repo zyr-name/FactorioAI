@@ -135,12 +135,12 @@ check is watching the character from a matching modded game client.
 
 ### 2. Navigation and basic game actions
 
-- [ ] Walk to a destination or interaction range; handle obstacles, detours,
+- [x] Walk to a destination or interaction range; handle obstacles, detours,
   unreachable targets, newly blocked routes, and getting stuck.
 - [ ] Inspect, mine, craft, place, rotate, transfer items, and cancel actions.
 - [ ] Enforce normal movement, action time, reach, recipes, research,
   placement rules, and personal inventory capacity in the game bridge.
-- [ ] Give requests character IDs and unique command IDs; expose running,
+- [x] Give requests character IDs and unique command IDs; expose running,
   completed, failed, and cancelled states and prevent duplicate effects on retries.
 - [ ] Script a complete furnace sequence using real supplies.
 

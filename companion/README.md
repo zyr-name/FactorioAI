@@ -28,7 +28,7 @@ Every joining game client needs the same mod ZIP. Build it with:
 bin/companion package
 ```
 
-Copy the generated `dist/factorio-ai-companion_0.2.0.zip` into the Factorio client's `mods`
+Copy the generated `dist/factorio-ai-companion_0.3.0.zip` into the Factorio client's `mods`
 directory. On macOS that is normally
 `~/Library/Application Support/factorio/mods/`. Restart Factorio after copying.
 
@@ -40,6 +40,7 @@ directory. On macOS that is normally
 | `bin/companion status` | Show identity, position, inventory, lease and motion state |
 | `bin/companion move X Y` | Walk to an absolute point and wait for arrival |
 | `bin/companion move DX DY --relative` | Walk by an offset and wait for arrival |
+| `bin/companion move X Y --radius 3` | Walk to any reachable point within interaction range |
 | `bin/companion stop` | Stop immediately and revoke any controller lease |
 | `bin/companion connect` | Interactive status/movement session |
 
@@ -49,10 +50,11 @@ is killed or loses RCON, the game-side lease expires after 180 simulation ticks
 (normally three seconds) and stops walking, mining, and shooting. Loading a save
 also revokes any saved lease on its first tick.
 
-Only one controller can hold the lease. A movement command is limited to 64
-tiles, uses normal character speed and collisions, and stops if progress stalls
-for two seconds. This milestone deliberately provides direct steering rather
-than pathfinding; obstacle-aware navigation belongs to the next milestone.
+Only one controller can hold the lease. A movement command is limited to 256
+tiles and uses Factorio's native pathfinder with the character's real collision
+rules. It detours around static obstacles and replans up to three times if the
+world changes or progress stalls. Every command ID is idempotent and retains a
+bounded queued/running/completed/failed/cancelled action record.
 
 For a remote development server, keep RCON private and forward it over SSH:
 

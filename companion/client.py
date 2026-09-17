@@ -46,21 +46,23 @@ class Companion:
             finally:
                 self.session = None
 
-    def move(self, x, y, relative=False, timeout=65):
+    def move(self, x, y, relative=False, radius=0.28, timeout=65):
         current = self.request("status")
         if relative:
             x += current["position"]["x"]
             y += current["position"]["y"]
-        state = self.request("move", x=x, y=y)
+        state = self.request("move", x=x, y=y, radius=radius)
         command_id = state["motion"]["command_id"]
         deadline = time.monotonic() + timeout
         last_tick = state["tick"]
         tick_changed = time.monotonic()
-        while state["motion"]["state"] == "moving":
+        action = self._action(state, command_id)
+        while action and action["state"] in {"queued", "running"}:
             time.sleep(0.3)
             state = self.request("heartbeat")
-            if state.get("motion", {}).get("command_id") != command_id:
-                raise BridgeError("superseded", "The move was replaced by another command.")
+            action = self._action(state, command_id)
+            if action is None:
+                raise BridgeError("action_lost", "The move is no longer retained by the game bridge.")
             now = time.monotonic()
             if state["tick"] != last_tick:
                 last_tick, tick_changed = state["tick"], now
@@ -68,6 +70,23 @@ class Companion:
                 raise BridgeError("paused", "Simulation is paused. Join the game or disable auto_pause.")
             if now > deadline:
                 raise BridgeError("timeout", "Move exceeded the controller's wall-clock deadline.")
-        if state["motion"]["state"] != "arrived":
-            raise BridgeError(state["motion"]["state"], "Move stopped before reaching its target.")
+        if not action or action["state"] != "completed":
+            code = (action or {}).get("error") or (action or {}).get("state", "action_lost")
+            raise BridgeError(code, "Move stopped before reaching its target.")
         return state
+
+    @staticmethod
+    def _action(state, command_id):
+        for action in state.get("actions", []):
+            if action.get("id") == command_id:
+                return action
+        # Protocol 1 compatibility while upgrading an existing server.
+        motion = state.get("motion", {})
+        if not state.get("actions") and motion.get("command_id") == command_id:
+            legacy = motion.get("state")
+            if legacy in {"moving", "pathfinding", "path_retry"}:
+                return {"id": command_id, "state": "running"}
+            if legacy == "arrived":
+                return {"id": command_id, "state": "completed"}
+            return {"id": command_id, "state": "failed", "error": legacy}
+        return None

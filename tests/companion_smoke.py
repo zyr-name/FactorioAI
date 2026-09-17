@@ -55,7 +55,7 @@ def main():
         config.mkdir(parents=True)
         mods = data / "mods"
         mods.mkdir()
-        build(mods / "factorio-ai-companion_0.2.0.zip")
+        build(mods / "factorio-ai-companion_0.3.0.zip")
         (mods / "mod-list.json").write_text(json.dumps({"mods": [
             {"name": "base", "enabled": True}, {"name": "factorio-ai-companion", "enabled": True}]}))
         settings = json.loads((ROOT / "server/defaults/server-settings.json").read_text())
@@ -121,9 +121,15 @@ def main():
                 assert abs(arrived["position"]["x"] - origin["x"] - 5) < 0.31
                 assert arrived["inventory"] == inventory
                 original_motion = arrived["motion"]
+                original_action = next(action for action in arrived["actions"]
+                                       if action["id"] == original_motion["command_id"])
+                assert original_action["state"] == "completed", original_action
                 duplicate = client.request("move", id=original_motion["command_id"], x=origin["x"] + 5, y=origin["y"])
                 assert duplicate["motion"] == original_motion
-                print("PASS: movement arrives, keeps inventory and ignores a repeated move", flush=True)
+                duplicate_action = next(action for action in duplicate["actions"]
+                                        if action["id"] == original_motion["command_id"])
+                assert duplicate_action == original_action, (duplicate_action, original_action)
+                print("PASS: movement completes once and command IDs are idempotent", flush=True)
 
                 position = client.request("status")["position"]
                 wall_x = math.floor(position["x"]) + 3
@@ -131,22 +137,61 @@ def main():
                 transport.command("/sc for y=" + str(wall_y - 4) + "," + str(wall_y + 4)
                                   + " do game.surfaces.nauvis.create_entity{name='stone-wall',position={"
                                   + str(wall_x) + ",y},force='player'} end")
+                detour = client.move(8, 0, relative=True)
+                assert abs(detour["position"]["x"] - position["x"] - 8) < 0.4, detour
+                assert detour["statistics"]["moves_completed"] >= 2, detour
+                transport.command("/sc for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{name='stone-wall'}) do e.destroy() end")
+                print("PASS: native pathfinding detours around a wall", flush=True)
+
+                position = client.request("status")["position"]
+                target_x, target_y = math.floor(position["x"]) + 6, math.floor(position["y"])
+                transport.command(
+                    "/sc local s=game.surfaces.nauvis; local x=" + str(target_x) + "; local y=" + str(target_y)
+                    + "; for d=-2,2 do s.create_entity{name='stone-wall',position={x-2,y+d},force='player'}; "
+                    + "s.create_entity{name='stone-wall',position={x+2,y+d},force='player'}; "
+                    + "if d>-2 and d<2 then s.create_entity{name='stone-wall',position={x+d,y-2},force='player'}; "
+                    + "s.create_entity{name='stone-wall',position={x+d,y+2},force='player'} end end")
                 try:
-                    client.move(8, 0, relative=True)
-                    raise AssertionError("Walked through an obstacle")
+                    client.move(target_x, target_y)
+                    raise AssertionError("Reached a sealed target")
                 except BridgeError as error:
-                    assert error.code == "blocked", error
+                    assert error.code == "unreachable", error
                 assert_still(client)
                 transport.command("/sc for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{name='stone-wall'}) do e.destroy() end")
-                print("PASS: blocked movement stops without bypassing collisions", flush=True)
+                print("PASS: an unreachable target fails with a retained action result", flush=True)
+
+                position = client.request("status")["position"]
+                moving = client.request("move", x=position["x"] + 20, y=position["y"])
+                command_id = moving["motion"]["command_id"]
+                wait_for(lambda: client.request("heartbeat")["motion"]["state"] == "moving")
+                current = client.request("status")["position"]
+                wall_x, wall_y = math.floor(current["x"]) + 3, math.floor(current["y"])
+                transport.command("/sc for y=" + str(wall_y - 4) + "," + str(wall_y + 4)
+                                  + " do game.surfaces.nauvis.create_entity{name='stone-wall',position={"
+                                  + str(wall_x) + ",y},force='player'} end")
+
+                def completed_replan():
+                    state = client.request("heartbeat")
+                    action = next(item for item in state["actions"] if item["id"] == command_id)
+                    return state if action["state"] not in {"queued", "running"} else None
+
+                replanned = wait_for(completed_replan, timeout=40)
+                replanned_action = next(item for item in replanned["actions"] if item["id"] == command_id)
+                assert replanned_action["state"] == "completed", replanned
+                assert replanned["motion"]["replan_count"] >= 1, replanned
+                transport.command("/sc for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{name='stone-wall'}) do e.destroy() end")
+                print("PASS: a newly blocked route replans and completes", flush=True)
 
                 position = client.request("status")["position"]
                 client.request("move", x=position["x"] + 30, y=position["y"])
                 time.sleep(0.3)
                 second.request("stop")
-                assert_still(second)
+                stopped = assert_still(second)
+                cancelled = next(action for action in stopped["actions"]
+                                 if action["id"] == stopped["motion"]["command_id"])
+                assert cancelled["state"] == "cancelled", cancelled
                 client.session = None
-                print("PASS: emergency stop revokes the controller lease", flush=True)
+                print("PASS: emergency stop cancels the action and revokes the lease", flush=True)
             finally:
                 second_transport.close()
 

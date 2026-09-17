@@ -96,6 +96,9 @@ textarea { resize: vertical; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo,
 .activity { margin-top: 23px; border-top: 1px solid var(--line); padding-top: 18px; }
 .event { display: grid; grid-template-columns: 85px 80px 1fr; gap: 12px; padding: 9px 0; font-size: 12px; border-bottom: 1px solid #222822; }
 .event time, .event span { color: var(--muted); }
+.event .action-completed { color: var(--green); }
+.event .action-failed { color: var(--red); }
+.event .action-running, .event .action-queued { color: var(--orange); }
 #toast { position: fixed; right: 22px; bottom: 22px; max-width: 410px; background: #202721; border: 1px solid #465148; border-radius: 9px; padding: 13px 17px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s; box-shadow: 0 15px 40px #0008; }
 #toast.show { opacity: 1; transform: none; }
 #toast.error { border-color: #7c3c38; color: #ffaaa5; }

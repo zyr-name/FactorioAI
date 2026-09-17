@@ -67,6 +67,7 @@ function render() {
   if (!playersList.contains(document.activeElement)) playersList.innerHTML = state.players.map(player => {
     const runtime = player.runtime;
     const gameStats = runtime.game?.statistics || {};
+    const actions = runtime.game?.actions || [];
     const events = player.statistics.events.slice(0, 8);
     return `<article class="card player-card" data-player="${escapeHtml(player.id)}">
       <div class="player-sidebar">
@@ -93,7 +94,9 @@ function render() {
           </div>
           <div class="button-row end"><button class="primary" type="submit">Save player</button></div>
         </form>
-        <div class="activity"><div class="card-label">RECENT ACTIVITY</div>${events.length ? events.map(event => `
+        <div class="activity"><div class="card-label">GAME ACTIONS</div>${actions.length ? actions.map(action => `
+          <div class="event action"><time>#${escapeHtml(action.id.slice(0,8))}</time><span class="action-${escapeHtml(action.state)}">${escapeHtml(action.state)}</span><code>${escapeHtml(action.type)} → ${escapeHtml(JSON.stringify(action.target || {}))}${action.error ? ` · ${escapeHtml(action.error)}` : ''}</code></div>`).join('') : '<p class="muted">No game actions recorded yet.</p>'}</div>
+        <div class="activity"><div class="card-label">PROCESS ACTIVITY</div>${events.length ? events.map(event => `
           <div class="event"><time>${new Date(event.created_at).toLocaleTimeString()}</time><span>${escapeHtml(event.kind)}</span><code>${escapeHtml(JSON.stringify(event.payload).slice(0,120))}</code></div>`).join('') : '<p class="muted">No activity recorded yet.</p>'}</div>
       </div>
     </article>`;

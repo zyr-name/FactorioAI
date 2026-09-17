@@ -101,6 +101,35 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(BridgeError, "did not match"):
             Companion(WrongTransport()).request("status")
 
+    def test_move_waits_through_pathfinding_for_completed_action(self):
+        class ActionTransport:
+            def __init__(self):
+                self.polls = 0
+
+            def command(self, text):
+                request = json.loads(text.removeprefix("/companion "))
+                if request["action"] == "acquire":
+                    result = {"state": "ready"}
+                elif request["action"] == "status":
+                    result = {"position": {"x": 0, "y": 0}}
+                elif request["action"] == "move":
+                    self.command_id = request["id"]
+                    result = {"tick": 1, "motion": {"command_id": self.command_id, "state": "pathfinding"},
+                              "actions": [{"id": self.command_id, "state": "running"}]}
+                else:
+                    self.polls += 1
+                    result = {"tick": self.polls + 1, "motion": {"command_id": self.command_id},
+                              "actions": [{"id": self.command_id,
+                                           "state": "completed" if self.polls > 1 else "running"}]}
+                return json.dumps({"id": request["id"], "ok": True, "result": result})
+
+        transport = ActionTransport()
+        client = Companion(transport)
+        client.acquire()
+        result = client.move(5, 0)
+        self.assertEqual(result["actions"][0]["state"], "completed")
+        self.assertEqual(transport.polls, 2)
+
 
 class PackageTests(unittest.TestCase):
     def test_package_is_deterministic_and_has_versioned_root(self):
@@ -110,8 +139,8 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(first.read_bytes(), second.read_bytes())
             with zipfile.ZipFile(first) as archive:
                 self.assertEqual(archive.namelist(), [
-                    "factorio-ai-companion_0.2.0/control.lua",
-                    "factorio-ai-companion_0.2.0/info.json",
+                    "factorio-ai-companion_0.3.0/control.lua",
+                    "factorio-ai-companion_0.3.0/info.json",
                 ])
 
 
