@@ -26,6 +26,13 @@ def coordinate(text):
     return value
 
 
+def radius(text):
+    value = coordinate(text)
+    if not 0.2 <= value <= 10:
+        raise argparse.ArgumentTypeError("Radius must be between 0.2 and 10 tiles.")
+    return value
+
+
 def parser():
     root = argparse.ArgumentParser(description="Control one persistent Factorio companion.")
     root.add_argument("--host", help="RCON host; default is the local experiment server")
@@ -41,6 +48,7 @@ def parser():
     move.add_argument("x", type=coordinate)
     move.add_argument("y", type=coordinate)
     move.add_argument("--relative", action="store_true", help="Treat coordinates as offsets")
+    move.add_argument("--radius", type=radius, default=0.28, help="Accept any reachable point within this range")
     package = commands.add_parser("package", help="Build the mod ZIP for server/client installation")
     package_info = json.loads((SOURCE / "info.json").read_text())
     package.add_argument(
@@ -129,7 +137,7 @@ def main(argv=None):
             interactive(client)
         elif args.command == "move":
             client.acquire()
-            display(client.move(args.x, args.y, relative=args.relative))
+            display(client.move(args.x, args.y, relative=args.relative, radius=args.radius))
         return 0
     except KeyboardInterrupt:
         print("Disconnecting; stopping companion.", file=sys.stderr)
