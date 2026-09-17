@@ -49,6 +49,36 @@ def parser():
     move.add_argument("y", type=coordinate)
     move.add_argument("--relative", action="store_true", help="Treat coordinates as offsets")
     move.add_argument("--radius", type=radius, default=0.28, help="Accept any reachable point within this range")
+    inspect = commands.add_parser("inspect", help="List nearby entities and reachable inventories")
+    inspect.add_argument("x", type=coordinate)
+    inspect.add_argument("y", type=coordinate)
+    inspect.add_argument("--radius", type=coordinate, default=8)
+    mine = commands.add_parser("mine", help="Mine a reachable entity using normal game timing")
+    mine.add_argument("x", type=coordinate)
+    mine.add_argument("y", type=coordinate)
+    mine.add_argument("--name")
+    mine.add_argument("--count", type=int, default=1)
+    craft = commands.add_parser("craft", help="Hand-craft an enabled recipe")
+    craft.add_argument("recipe")
+    craft.add_argument("--count", type=int, default=1)
+    place = commands.add_parser("place", help="Place an inventory item within build reach")
+    place.add_argument("item")
+    place.add_argument("x", type=coordinate)
+    place.add_argument("y", type=coordinate)
+    place.add_argument("--direction", type=int, default=0)
+    rotate = commands.add_parser("rotate", help="Rotate a reachable entity")
+    rotate.add_argument("x", type=coordinate)
+    rotate.add_argument("y", type=coordinate)
+    rotate.add_argument("--name")
+    rotate.add_argument("--reverse", action="store_true")
+    transfer = commands.add_parser("transfer", help="Transfer items to or from an entity inventory")
+    transfer.add_argument("direction", choices=("to", "from"))
+    transfer.add_argument("inventory", choices=("chest", "fuel", "source", "result", "input", "output"))
+    transfer.add_argument("item")
+    transfer.add_argument("count", type=int)
+    transfer.add_argument("x", type=coordinate)
+    transfer.add_argument("y", type=coordinate)
+    transfer.add_argument("--name")
     package = commands.add_parser("package", help="Build the mod ZIP for server/client installation")
     package_info = json.loads((SOURCE / "info.json").read_text())
     package.add_argument(
@@ -138,6 +168,32 @@ def main(argv=None):
         elif args.command == "move":
             client.acquire()
             display(client.move(args.x, args.y, relative=args.relative, radius=args.radius))
+        elif args.command == "inspect":
+            client.acquire()
+            display(client.request("inspect", x=args.x, y=args.y, radius=args.radius))
+        elif args.command == "mine":
+            client.acquire()
+            display(client.mine(args.x, args.y, count=args.count, name=args.name))
+        elif args.command == "craft":
+            client.acquire()
+            display(client.craft(args.recipe, count=args.count))
+        elif args.command == "place":
+            client.acquire()
+            display(client.request("place", item=args.item, x=args.x, y=args.y,
+                                   direction=args.direction))
+        elif args.command == "rotate":
+            client.acquire()
+            fields = {"x": args.x, "y": args.y, "reverse": args.reverse}
+            if args.name:
+                fields["name"] = args.name
+            display(client.request("rotate", **fields))
+        elif args.command == "transfer":
+            client.acquire()
+            fields = {"direction": args.direction, "inventory": args.inventory,
+                      "item": args.item, "count": args.count, "x": args.x, "y": args.y}
+            if args.name:
+                fields["name"] = args.name
+            display(client.request("transfer", **fields))
         return 0
     except KeyboardInterrupt:
         print("Disconnecting; stopping companion.", file=sys.stderr)

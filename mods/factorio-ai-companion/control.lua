@@ -5,6 +5,7 @@ local MAX_DISTANCE = 256
 local ARRIVAL_DISTANCE = 0.28
 local MAX_REPLANS = 3
 local ACTION_HISTORY = 40
+local MAX_INSPECT_ENTITIES = 100
 local just_loaded = false
 
 local function valid_character()
@@ -23,6 +24,11 @@ local function statistics_for(companion, entity)
   statistics.moves_blocked = statistics.moves_blocked or 0
   statistics.moves_stopped = statistics.moves_stopped or 0
   statistics.replans = statistics.replans or 0
+  statistics.items_mined = statistics.items_mined or 0
+  statistics.items_crafted = statistics.items_crafted or 0
+  statistics.entities_placed = statistics.entities_placed or 0
+  statistics.entities_rotated = statistics.entities_rotated or 0
+  statistics.items_transferred = statistics.items_transferred or 0
   if entity and not statistics.last_position then
     statistics.last_position = {x = entity.position.x, y = entity.position.y}
   end
@@ -36,9 +42,8 @@ local function stop_entity(entity)
   entity.shooting_state = {state = defines.shooting.not_shooting, position = entity.position}
 end
 
-local function finish_action(companion, state, reason)
-  local motion = companion and companion.motion
-  local action = motion and companion.actions and companion.actions[motion.command_id]
+local function finish_action(companion, command_id, state, reason)
+  local action = command_id and companion and companion.actions and companion.actions[command_id]
   if action and (action.state == "queued" or action.state == "running") then
     action.state = state
     action.finished_tick = game.tick
@@ -57,7 +62,7 @@ local function halt(reason)
     if reason == "arrived" then terminal = "completed" end
     if reason == "blocked" or reason == "unreachable" or reason == "timed_out"
         or reason == "pathfinder_error" then terminal = "failed" end
-    finish_action(companion, terminal, reason)
+    finish_action(companion, companion.motion.command_id, terminal, reason)
     companion.motion.state = reason
     companion.motion.finished_tick = game.tick
     companion.motion.path = nil
@@ -71,11 +76,23 @@ local function halt(reason)
       statistics.moves_stopped = statistics.moves_stopped + 1
     end
   end
+  if companion and companion.operation and not companion.operation.finished_tick then
+    local operation = companion.operation
+    if operation.type == "craft" and entity then
+      for _ = 1, operation.started_count or 0 do
+        if entity.crafting_queue_size == 0 then break end
+        entity.cancel_crafting{index = 1, count = 1}
+      end
+    end
+    finish_action(companion, operation.command_id, "cancelled", reason)
+    operation.state = reason
+    operation.finished_tick = game.tick
+  end
 end
 
 local function initialize()
   storage.bridge = storage.bridge or {}
-  storage.bridge.schema = 2
+  storage.bridge.schema = 3
   halt("configuration_changed")
   storage.bridge.session = nil
 end
@@ -112,6 +129,17 @@ local function action_view(action)
   }
 end
 
+local function operation_view(operation)
+  if not operation then return {state = "idle"} end
+  return {
+    command_id = operation.command_id, type = operation.type,
+    state = operation.state, started_tick = operation.started_tick,
+    finished_tick = operation.finished_tick, target = operation.target_summary or operation.target,
+    completed_count = operation.completed_count or 0,
+    requested_count = operation.requested_count
+  }
+end
+
 local function recent_actions(companion)
   local result = {}
   local order = companion.action_order or {}
@@ -138,7 +166,7 @@ local function status()
   local companion = bridge.companion
   local entity = valid_character()
   local result = {
-    tick = game.tick, protocol = 2, lease_ticks = LEASE_TICKS,
+    tick = game.tick, protocol = 3, lease_ticks = LEASE_TICKS,
     connected = bridge.session ~= nil,
     lease_remaining_ticks = bridge.session and math.max(0, bridge.session.expires_tick - game.tick) or 0,
     exists = entity ~= nil,
@@ -150,6 +178,7 @@ local function status()
     result.id = companion.id
     result.name = companion.name
     result.motion = motion_view(companion.motion)
+    result.operation = operation_view(companion.operation)
     result.actions = recent_actions(companion)
     local statistics = statistics_for(companion, entity)
     result.statistics = {
@@ -160,7 +189,12 @@ local function status()
       moves_completed = statistics.moves_completed,
       moves_blocked = statistics.moves_blocked,
       moves_stopped = statistics.moves_stopped,
-      replans = statistics.replans
+      replans = statistics.replans,
+      items_mined = statistics.items_mined,
+      items_crafted = statistics.items_crafted,
+      entities_placed = statistics.entities_placed,
+      entities_rotated = statistics.entities_rotated,
+      items_transferred = statistics.items_transferred
     }
   end
   if entity then
@@ -221,7 +255,8 @@ local function spawn(request)
     statistics = {
       spawned_tick = game.tick, connected_ticks = 0, distance_tiles = 0,
       moves_started = 0, moves_completed = 0, moves_blocked = 0,
-      moves_stopped = 0, replans = 0,
+      moves_stopped = 0, replans = 0, items_mined = 0, items_crafted = 0,
+      entities_placed = 0, entities_rotated = 0, items_transferred = 0,
       last_position = {x = entity.position.x, y = entity.position.y}
     }
   }
@@ -315,6 +350,283 @@ local function begin_move(request)
   return status()
 end
 
+local function integer(value, minimum, maximum)
+  return finite_number(value) and value == math.floor(value)
+      and value >= minimum and value <= maximum
+end
+
+local function position_from(request)
+  if not finite_number(request.x) or not finite_number(request.y) then
+    fail("invalid_target", "Provide finite x and y coordinates.")
+  end
+  return {x = request.x, y = request.y}
+end
+
+local function entity_at(request, allow_character)
+  local character = valid_character()
+  local position = position_from(request)
+  if request.name ~= nil and (type(request.name) ~= "string" or #request.name < 1
+      or #request.name > 200 or request.name:find("[%c]")) then
+    fail("invalid_target", "Entity name must contain 1..200 bytes and no control characters.")
+  end
+  local candidates = character.surface.find_entities_filtered{
+    area = {{position.x - 0.75, position.y - 0.75}, {position.x + 0.75, position.y + 0.75}},
+    name = request.name
+  }
+  local best, best_distance
+  for _, candidate in ipairs(candidates) do
+    if candidate.valid and (allow_character or candidate ~= character) then
+      local dx, dy = candidate.position.x - position.x, candidate.position.y - position.y
+      local distance = dx * dx + dy * dy
+      if not best_distance or distance < best_distance then
+        best, best_distance = candidate, distance
+      end
+    end
+  end
+  if not best then fail("target_not_found", "No matching entity is near that position.") end
+  return best
+end
+
+local function entity_summary(entity)
+  local result = {
+    name = entity.name, type = entity.type,
+    position = {x = entity.position.x, y = entity.position.y},
+    direction = entity.direction, force = entity.force and entity.force.name or nil
+  }
+  if entity.health then result.health = entity.health end
+  if entity.type == "resource" then result.amount = entity.amount end
+  return result
+end
+
+local inventory_defines = {
+  chest = defines.inventory.chest,
+  fuel = defines.inventory.fuel,
+  source = defines.inventory.furnace_source,
+  result = defines.inventory.furnace_result,
+  input = defines.inventory.assembling_machine_input,
+  output = defines.inventory.assembling_machine_output
+}
+
+local function inventory_summary(inventory)
+  local result = {}
+  if inventory then
+    for _, item in pairs(inventory.get_contents()) do
+      result[item.name .. ":" .. item.quality] = item.count
+    end
+  end
+  return result
+end
+
+local function target_inventory(entity, selector)
+  local inventory_id = inventory_defines[selector]
+  if not inventory_id then
+    fail("invalid_inventory", "Inventory must be chest, fuel, source, result, input, or output.")
+  end
+  local inventory = entity.get_inventory(inventory_id)
+  if not inventory then fail("no_inventory", "That entity has no " .. selector .. " inventory.") end
+  return inventory
+end
+
+local function inspect(request)
+  local character = valid_character()
+  local position = position_from(request)
+  local radius = request.radius or 8
+  if not finite_number(radius) or radius < 0 or radius > 32 then
+    fail("invalid_radius", "Inspection radius must be between 0 and 32 tiles.")
+  end
+  local result = {position = position, radius = radius, entities = {}}
+  local entities = character.surface.find_entities_filtered{position = position, radius = radius}
+  for _, entity in ipairs(entities) do
+    if entity ~= character and #result.entities < MAX_INSPECT_ENTITIES then
+      local summary = entity_summary(entity)
+      if character.can_reach_entity(entity) then
+        summary.reachable = true
+        summary.inventories = {}
+        for selector, inventory_id in pairs(inventory_defines) do
+          local inventory = entity.get_inventory(inventory_id)
+          if inventory then summary.inventories[selector] = inventory_summary(inventory) end
+        end
+      else
+        summary.reachable = false
+      end
+      result.entities[#result.entities + 1] = summary
+    end
+  end
+  result.truncated = #entities - 1 > #result.entities
+  return result
+end
+
+local function begin_operation(request, target)
+  local companion = storage.bridge.companion
+  local action, created = remember_action(companion, request, target)
+  if not created then return action, false end
+  halt("superseded")
+  action.state = "running"
+  action.started_tick = game.tick
+  return action, true
+end
+
+local function begin_mine(request)
+  local character = valid_character()
+  local target = entity_at(request)
+  local resource_amount = target.type == "resource" and target.amount or nil
+  local count = request.count or 1
+  if not integer(count, 1, 1000) then fail("invalid_count", "Mining count must be an integer from 1 to 1000.") end
+  local action, created = begin_operation(request, entity_summary(target))
+  if not created then return status() end
+  if not target.minable then
+    finish_action(storage.bridge.companion, request.id, "failed", "not_minable")
+    fail("not_minable", "That entity cannot be mined.")
+  end
+  if not resource_amount and count ~= 1 then
+    finish_action(storage.bridge.companion, request.id, "failed", "invalid_count")
+    fail("invalid_count", "Non-resource entities can only be mined once.")
+  end
+  if not character.can_reach_entity(target) then
+    finish_action(storage.bridge.companion, request.id, "failed", "out_of_reach")
+    fail("out_of_reach", "Move within mining reach first.")
+  end
+  local companion = storage.bridge.companion
+  local properties = target.prototype.mineable_properties
+  local speed = (character.prototype.mining_speed or 0.5)
+      * (1 + character.character_mining_speed_modifier + character.force.manual_mining_speed_modifier)
+  if speed <= 0 or not properties or properties.required_fluid then
+    finish_action(companion, request.id, "failed", "not_hand_minable")
+    fail("not_hand_minable", "The character cannot hand-mine that entity.")
+  end
+  companion.operation = {
+    command_id = request.id, type = "mine", state = "mining",
+    started_tick = game.tick, deadline_tick = game.tick + 216000,
+    target = target, target_summary = entity_summary(target),
+    requested_count = count, completed_count = 0,
+    last_amount = resource_amount, was_resource = resource_amount ~= nil,
+    mining_ticks = math.max(1, math.ceil(properties.mining_time * 60 / speed))
+  }
+  companion.operation.next_mine_tick = game.tick + companion.operation.mining_ticks
+  return status()
+end
+
+local function begin_craft(request)
+  local character = valid_character()
+  local count = request.count or 1
+  if type(request.recipe) ~= "string" or not integer(count, 1, 1000) then
+    fail("invalid_recipe", "Provide a recipe and an integer count from 1 to 1000.")
+  end
+  local target = {recipe = request.recipe, count = count}
+  local action, created = begin_operation(request, target)
+  if not created then return status() end
+  if character.crafting_queue_size > 0 then
+    finish_action(storage.bridge.companion, request.id, "failed", "crafting_busy")
+    fail("crafting_busy", "Wait for the existing crafting queue to finish.")
+  end
+  if character.get_craftable_count(request.recipe) < count then
+    finish_action(storage.bridge.companion, request.id, "failed", "not_craftable")
+    fail("not_craftable", "The recipe is unavailable or its ingredients are missing.")
+  end
+  local started = character.begin_crafting{count = count, recipe = request.recipe, silent = true}
+  if started ~= count then
+    finish_action(storage.bridge.companion, request.id, "failed", "craft_failed")
+    fail("craft_failed", "Factorio did not start the requested crafting count.")
+  end
+  storage.bridge.companion.operation = {
+    command_id = request.id, type = "craft", state = "crafting",
+    started_tick = game.tick, deadline_tick = game.tick + 216000,
+    target = target, requested_count = count, started_count = started,
+    completed_count = 0
+  }
+  return status()
+end
+
+local function instant_action(request, target, callback)
+  local companion = storage.bridge.companion
+  local action, created = remember_action(companion, request, target)
+  if not created then return status() end
+  halt("superseded")
+  action.state = "running"
+  action.started_tick = game.tick
+  local ok, result = pcall(callback)
+  if not ok then
+    local reason = type(result) == "table" and result.code or "action_failed"
+    finish_action(companion, request.id, "failed", reason)
+    error(result, 0)
+  end
+  finish_action(companion, request.id, "completed", result)
+  return status()
+end
+
+local function place(request)
+  local character = valid_character()
+  local position = position_from(request)
+  if type(request.item) ~= "string" then fail("invalid_item", "Provide an item to place.") end
+  local direction = request.direction or defines.direction.north
+  if not integer(direction, 0, 15) then fail("invalid_direction", "Direction must be an integer from 0 to 15.") end
+  local item = prototypes.item[request.item]
+  local placed = item and item.place_result
+  if not placed then fail("not_placeable", "That item does not place an entity.") end
+  return instant_action(request, {item = request.item, position = position, direction = direction}, function()
+    local inventory = character.get_inventory(defines.inventory.character_main)
+    if inventory.get_item_count(request.item) < 1 then fail("missing_item", "The item is not in the character inventory.") end
+    local build = {name = placed.name, position = position, direction = direction, force = character.force}
+    if not character.can_place_entity(build) then fail("cannot_place", "The entity cannot be placed there or is out of build reach.") end
+    if inventory.remove{name = request.item, count = 1} ~= 1 then fail("missing_item", "The item could not be removed.") end
+    local entity = character.surface.create_entity{
+      name = placed.name, position = position, direction = direction,
+      force = character.force, raise_built = true
+    }
+    if not entity then
+      inventory.insert{name = request.item, count = 1}
+      fail("place_failed", "Factorio could not create the entity.")
+    end
+    local statistics = statistics_for(storage.bridge.companion, character)
+    statistics.entities_placed = statistics.entities_placed + 1
+    return entity_summary(entity)
+  end)
+end
+
+local function rotate(request)
+  local character = valid_character()
+  local target = entity_at(request)
+  local summary = entity_summary(target)
+  return instant_action(request, summary, function()
+    if not character.can_reach_entity(target) then fail("out_of_reach", "Move within interaction reach first.") end
+    if not target.rotate{reverse = request.reverse == true} then fail("rotate_failed", "Factorio rejected the rotation.") end
+    local statistics = statistics_for(storage.bridge.companion, character)
+    statistics.entities_rotated = statistics.entities_rotated + 1
+    return entity_summary(target)
+  end)
+end
+
+local function transfer(request)
+  local character = valid_character()
+  local target = entity_at(request)
+  local count = request.count or 1
+  if type(request.item) ~= "string" or not integer(count, 1, 100000) then
+    fail("invalid_transfer", "Provide an item and an integer count from 1 to 100000.")
+  end
+  if not prototypes.item[request.item] then fail("invalid_item", "That item does not exist.") end
+  if request.direction ~= "to" and request.direction ~= "from" then
+    fail("invalid_transfer", "Direction must be 'to' or 'from'.")
+  end
+  local description = {entity = entity_summary(target), inventory = request.inventory,
+                       item = request.item, count = count, direction = request.direction}
+  return instant_action(request, description, function()
+    if not character.can_reach_entity(target) then fail("out_of_reach", "Move within interaction reach first.") end
+    local character_inventory = character.get_inventory(defines.inventory.character_main)
+    local entity_inventory = target_inventory(target, request.inventory)
+    local source = request.direction == "to" and character_inventory or entity_inventory
+    local destination = request.direction == "to" and entity_inventory or character_inventory
+    local removed = source.remove{name = request.item, count = count}
+    if removed == 0 then fail("missing_item", "The source inventory has none of that item.") end
+    local inserted = destination.insert{name = request.item, count = removed}
+    if inserted < removed then source.insert{name = request.item, count = removed - inserted} end
+    if inserted == 0 then fail("destination_full", "The destination inventory cannot accept that item.") end
+    local statistics = statistics_for(storage.bridge.companion, character)
+    statistics.items_transferred = statistics.items_transferred + inserted
+    return {item = request.item, count = inserted, direction = request.direction,
+            inventory = request.inventory}
+  end)
+end
+
 local function dispatch(request)
   expire()
   if request.action == "status" then return status() end
@@ -349,6 +661,12 @@ local function dispatch(request)
     return status()
   end
   if request.action == "move" then return begin_move(request) end
+  if request.action == "inspect" then return inspect(request) end
+  if request.action == "mine" then return begin_mine(request) end
+  if request.action == "craft" then return begin_craft(request) end
+  if request.action == "place" then return place(request) end
+  if request.action == "rotate" then return rotate(request) end
+  if request.action == "transfer" then return transfer(request) end
   fail("unknown_action", "Unknown companion action.")
 end
 
@@ -424,6 +742,70 @@ script.on_event(defines.events.on_tick, function()
   local moved_x, moved_y = entity.position.x - last.x, entity.position.y - last.y
   statistics.distance_tiles = statistics.distance_tiles + math.sqrt(moved_x * moved_x + moved_y * moved_y)
   statistics.last_position = {x = entity.position.x, y = entity.position.y}
+
+  local operation = companion.operation
+  if bridge.session and operation and not operation.finished_tick then
+    if game.tick >= operation.deadline_tick then
+      stop_entity(entity)
+      finish_action(companion, operation.command_id, "failed", "timed_out")
+      operation.state = "timed_out"
+      operation.finished_tick = game.tick
+    elseif operation.type == "craft" then
+      if entity.crafting_queue_size == 0 then
+        operation.completed_count = operation.started_count
+        operation.state = "completed"
+        operation.finished_tick = game.tick
+        statistics.items_crafted = statistics.items_crafted + operation.started_count
+        finish_action(companion, operation.command_id, "completed", {
+          recipe = operation.target.recipe, count = operation.started_count
+        })
+      end
+    elseif operation.type == "mine" then
+      local target = operation.target
+      if target.valid then
+        if not entity.can_reach_entity(target) then
+          operation.state = "out_of_reach"
+          operation.finished_tick = game.tick
+          finish_action(companion, operation.command_id, "failed", "out_of_reach")
+        elseif game.tick >= operation.next_mine_tick then
+          local inventory = entity.get_inventory(defines.inventory.character_main)
+          local amount_before = operation.was_resource and target.amount or nil
+          local mined = target.mine{inventory = inventory, force = false, raise_destroyed = true}
+          local progressed = mined or (amount_before and target.valid and target.amount < amount_before)
+              or (amount_before and not target.valid)
+          if not progressed then
+            operation.state = "inventory_full"
+            operation.finished_tick = game.tick
+            finish_action(companion, operation.command_id, "failed", "inventory_full")
+          else
+            operation.completed_count = operation.completed_count + 1
+            statistics.items_mined = statistics.items_mined + 1
+            if operation.completed_count >= operation.requested_count then
+              operation.state = "completed"
+              operation.finished_tick = game.tick
+              finish_action(companion, operation.command_id, "completed", {
+                count = operation.completed_count, target = operation.target_summary
+              })
+            else
+              operation.next_mine_tick = game.tick + operation.mining_ticks
+            end
+          end
+        end
+      else
+        if operation.completed_count >= operation.requested_count then
+          operation.state = "completed"
+          operation.finished_tick = game.tick
+          finish_action(companion, operation.command_id, "completed", {
+            count = operation.completed_count, target = operation.target_summary
+          })
+        else
+          operation.state = "target_lost"
+          operation.finished_tick = game.tick
+          finish_action(companion, operation.command_id, "failed", "target_lost")
+        end
+      end
+    end
+  end
 
   local motion = companion.motion
   if not bridge.session or not motion or motion.finished_tick then return end

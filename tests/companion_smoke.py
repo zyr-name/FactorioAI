@@ -55,7 +55,7 @@ def main():
         config.mkdir(parents=True)
         mods = data / "mods"
         mods.mkdir()
-        build(mods / "factorio-ai-companion_0.3.0.zip")
+        build(mods / "factorio-ai-companion_0.4.0.zip")
         (mods / "mod-list.json").write_text(json.dumps({"mods": [
             {"name": "base", "enabled": True}, {"name": "factorio-ai-companion", "enabled": True}]}))
         settings = json.loads((ROOT / "server/defaults/server-settings.json").read_text())
@@ -104,9 +104,12 @@ def main():
             transport.command("/sc local s=game.surfaces.nauvis; "
                               "for _,e in pairs(s.find_entities_filtered{area={{-70,-70},{70,70}},type={'tree','simple-entity','cliff'}}) do e.destroy() end; "
                               "local tiles={}; for x=-70,70 do for y=-70,70 do tiles[#tiles+1]={name='grass-1',position={x,y}} end end; s.set_tiles(tiles); "
-                              "for _,e in pairs(s.find_entities_filtered{type='character'}) do e.insert{name='iron-plate',count=11}; e.insert{name='wood',count=7} end")
+                              "for _,e in pairs(s.find_entities_filtered{type='character'}) do "
+                              "e.insert{name='stone',count=10}; e.insert{name='coal',count=2}; "
+                              "e.insert{name='transport-belt',count=1}; e.insert{name='wood',count=7} end")
             inventory = client.request("status")["inventory"]
-            assert inventory == {"iron-plate:normal": 11, "wood:normal": 7}, inventory
+            assert inventory == {"coal:normal": 2, "stone:normal": 10,
+                                 "transport-belt:normal": 1, "wood:normal": 7}, inventory
             client.acquire()
             second_transport = RconClient("127.0.0.1", port[0], password)
             second = Companion(second_transport)
@@ -116,6 +119,94 @@ def main():
                     raise AssertionError("A second controller acquired an active lease")
                 except BridgeError as error:
                     assert error.code == "busy", error
+
+                cancelling = client.request("craft", recipe="stone-furnace", count=2)
+                cancelling_id = cancelling["operation"]["command_id"]
+                time.sleep(0.1)
+                second.request("stop")
+                cancelled = next(action for action in second.request("status")["actions"]
+                                 if action["id"] == cancelling_id)
+                assert cancelled["state"] == "cancelled", cancelled
+                assert second.request("status")["inventory"]["stone:normal"] == 10
+                client.session = None
+                client.acquire()
+                print("PASS: emergency stop cancels hand-crafting and refunds ingredients", flush=True)
+
+                position = client.request("status")["position"]
+                ore_x, ore_y = position["x"] + 1.5, position["y"]
+                furnace_x, furnace_y = position["x"] - 2, position["y"]
+                belt_x, belt_y = position["x"], position["y"] + 2
+                transport.command("/sc game.surfaces.nauvis.create_entity{name='iron-ore',position={"
+                                  + str(ore_x) + "," + str(ore_y) + "},amount=10}")
+                nearby = client.request("inspect", x=position["x"], y=position["y"], radius=4)
+                ore = next(entity for entity in nearby["entities"] if entity["name"] == "iron-ore")
+                assert ore["reachable"] and ore["amount"] == 10, ore
+                mined = client.mine(ore_x, ore_y, name="iron-ore", timeout=20)
+                mine_action = mined["actions"][0]
+                assert mine_action["finished_tick"] - mine_action["started_tick"] >= 60, mine_action
+                assert mined["inventory"]["iron-ore:normal"] == 1, mined
+                assert next(entity for entity in client.request("inspect", x=ore_x, y=ore_y, radius=1)["entities"]
+                            if entity["name"] == "iron-ore")["amount"] == 9
+                crafted = client.craft("stone-furnace")
+                craft_action = crafted["actions"][0]
+                assert craft_action["finished_tick"] - craft_action["started_tick"] >= 20, craft_action
+                assert "stone-furnace:normal" in crafted["inventory"], crafted
+                assert crafted["inventory"]["stone:normal"] == 5, crafted
+
+                place_id = uuid.uuid4().hex
+                placed = client.request("place", id=place_id, item="stone-furnace",
+                                        x=furnace_x, y=furnace_y, direction=0)
+                placed_action = next(action for action in placed["actions"] if action["id"] == place_id)
+                assert placed_action["state"] == "completed", placed_action
+                duplicate_place = client.request("place", id=place_id, item="stone-furnace",
+                                                  x=furnace_x, y=furnace_y, direction=0)
+                assert next(action for action in duplicate_place["actions"]
+                            if action["id"] == place_id) == placed_action
+
+                client.request("place", item="transport-belt", x=belt_x, y=belt_y, direction=0)
+                rotate_id = uuid.uuid4().hex
+                rotated = client.request("rotate", id=rotate_id, x=belt_x, y=belt_y,
+                                         name="transport-belt")
+                rotated_action = next(action for action in rotated["actions"] if action["id"] == rotate_id)
+                duplicate_rotate = client.request("rotate", id=rotate_id, x=belt_x, y=belt_y,
+                                                   name="transport-belt")
+                assert next(action for action in duplicate_rotate["actions"]
+                            if action["id"] == rotate_id) == rotated_action
+
+                ore_transfer_id = uuid.uuid4().hex
+                client.request("transfer", id=ore_transfer_id, direction="to", inventory="source",
+                               item="iron-ore", count=1, x=furnace_x, y=furnace_y, name="stone-furnace")
+                client.request("transfer", id=ore_transfer_id, direction="to", inventory="source",
+                               item="iron-ore", count=1, x=furnace_x, y=furnace_y, name="stone-furnace")
+                client.request("transfer", direction="to", inventory="fuel", item="coal", count=1,
+                               x=furnace_x, y=furnace_y, name="stone-furnace")
+
+                def plate_ready():
+                    inspected = client.request("inspect", x=furnace_x, y=furnace_y, radius=1)
+                    furnace = next(entity for entity in inspected["entities"]
+                                   if entity["name"] == "stone-furnace")
+                    return furnace if furnace["inventories"]["result"].get("iron-plate:normal") == 1 else None
+
+                furnace = wait_for(plate_ready, timeout=15)
+                assert furnace["inventories"]["source"] == {}, furnace
+                client.request("transfer", direction="from", inventory="result", item="iron-plate", count=1,
+                               x=furnace_x, y=furnace_y, name="stone-furnace")
+                inventory = client.request("status")["inventory"]
+                assert inventory == {"coal:normal": 1, "iron-plate:normal": 1,
+                                     "stone:normal": 5, "wood:normal": 7}, inventory
+                transport.command("/sc local e=game.surfaces.nauvis.find_entity('stone-furnace',{"
+                                  + str(furnace_x) + "," + str(furnace_y)
+                                  + "}); e.get_inventory(defines.inventory.furnace_result).insert{name='iron-plate',count=100}")
+                try:
+                    client.request("transfer", direction="to", inventory="result", item="coal", count=1,
+                                   x=furnace_x, y=furnace_y, name="stone-furnace")
+                    raise AssertionError("A full furnace output accepted coal")
+                except BridgeError as error:
+                    assert error.code == "destination_full", error
+                assert client.request("status")["inventory"] == inventory
+                print("PASS: inspect, timed mining/crafting, place, rotate and transfer produce one iron plate", flush=True)
+                print("PASS: repeated and rejected mutations do not lose or duplicate items or entities", flush=True)
+
                 origin = client.request("status")["position"]
                 arrived = client.move(5, 0, relative=True)
                 assert abs(arrived["position"]["x"] - origin["x"] - 5) < 0.31
@@ -216,6 +307,9 @@ def main():
             client.acquire()
             client.release()
             before_restart = client.request("status")
+            for key, expected in {"items_mined": 1, "items_crafted": 1, "entities_placed": 2,
+                                  "entities_rotated": 1, "items_transferred": 3}.items():
+                assert before_restart["statistics"][key] == expected, (key, before_restart)
             transport.command("/server-save companion-persistence")
             wait_for(lambda: (data / "saves/companion-persistence.zip").exists())
             transport.close()
@@ -228,6 +322,9 @@ def main():
             after_restart = client.request("status")
             for key in ("id", "name", "position", "inventory"):
                 assert before_restart[key] == after_restart[key], (key, before_restart, after_restart)
+            for key in ("items_mined", "items_crafted", "entities_placed",
+                        "entities_rotated", "items_transferred"):
+                assert before_restart["statistics"][key] == after_restart["statistics"][key]
             client.acquire()
             position = client.request("status")["position"]
             client.request("move", x=position["x"] + 30, y=position["y"])

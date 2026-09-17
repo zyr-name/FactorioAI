@@ -82,6 +82,10 @@ function render() {
           <div><strong>${duration(player.statistics.online_seconds)}</strong><span>ONLINE</span></div>
           <div><strong>${Math.round(gameStats.distance_tiles || 0)}</strong><span>TILES WALKED</span></div>
           <div><strong>${gameStats.moves_completed || 0}</strong><span>MOVES DONE</span></div>
+          <div><strong>${gameStats.items_mined || 0}</strong><span>ITEMS MINED</span></div>
+          <div><strong>${gameStats.items_crafted || 0}</strong><span>ITEMS CRAFTED</span></div>
+          <div><strong>${gameStats.entities_placed || 0}</strong><span>PLACED</span></div>
+          <div><strong>${gameStats.items_transferred || 0}</strong><span>TRANSFERRED</span></div>
         </div>
       </div>
       <div class="player-main">

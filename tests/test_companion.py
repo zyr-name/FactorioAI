@@ -139,8 +139,8 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(first.read_bytes(), second.read_bytes())
             with zipfile.ZipFile(first) as archive:
                 self.assertEqual(archive.namelist(), [
-                    "factorio-ai-companion_0.3.0/control.lua",
-                    "factorio-ai-companion_0.3.0/info.json",
+                    "factorio-ai-companion_0.4.0/control.lua",
+                    "factorio-ai-companion_0.4.0/info.json",
                 ])
 
 

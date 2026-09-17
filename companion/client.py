@@ -53,6 +53,20 @@ class Companion:
             y += current["position"]["y"]
         state = self.request("move", x=x, y=y, radius=radius)
         command_id = state["motion"]["command_id"]
+        return self.wait_for_action(state, command_id, "Move", timeout)
+
+    def mine(self, x, y, count=1, name=None, timeout=300):
+        fields = {"x": x, "y": y, "count": count}
+        if name:
+            fields["name"] = name
+        state = self.request("mine", **fields)
+        return self.wait_for_action(state, self._newest_action_id(state), "Mining", timeout)
+
+    def craft(self, recipe, count=1, timeout=300):
+        state = self.request("craft", recipe=recipe, count=count)
+        return self.wait_for_action(state, self._newest_action_id(state), "Crafting", timeout)
+
+    def wait_for_action(self, state, command_id, label="Action", timeout=300):
         deadline = time.monotonic() + timeout
         last_tick = state["tick"]
         tick_changed = time.monotonic()
@@ -62,18 +76,25 @@ class Companion:
             state = self.request("heartbeat")
             action = self._action(state, command_id)
             if action is None:
-                raise BridgeError("action_lost", "The move is no longer retained by the game bridge.")
+                raise BridgeError("action_lost", label + " is no longer retained by the game bridge.")
             now = time.monotonic()
             if state["tick"] != last_tick:
                 last_tick, tick_changed = state["tick"], now
             if now - tick_changed > 5:
                 raise BridgeError("paused", "Simulation is paused. Join the game or disable auto_pause.")
             if now > deadline:
-                raise BridgeError("timeout", "Move exceeded the controller's wall-clock deadline.")
+                raise BridgeError("timeout", label + " exceeded the controller's wall-clock deadline.")
         if not action or action["state"] != "completed":
             code = (action or {}).get("error") or (action or {}).get("state", "action_lost")
-            raise BridgeError(code, "Move stopped before reaching its target.")
+            raise BridgeError(code, label + " stopped before completion.")
         return state
+
+    @staticmethod
+    def _newest_action_id(state):
+        actions = state.get("actions", [])
+        if not actions:
+            raise BridgeError("action_lost", "The game bridge did not retain the action.")
+        return actions[0]["id"]
 
     @staticmethod
     def _action(state, command_id):
