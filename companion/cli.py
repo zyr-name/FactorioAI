@@ -53,6 +53,8 @@ def parser():
     inspect.add_argument("x", type=coordinate)
     inspect.add_argument("y", type=coordinate)
     inspect.add_argument("--radius", type=coordinate, default=8)
+    observe = commands.add_parser("observe", help="Summarize local, explored-map, recipe and task context")
+    observe.add_argument("--radius", type=coordinate, default=16)
     mine = commands.add_parser("mine", help="Mine a reachable entity using normal game timing")
     mine.add_argument("x", type=coordinate)
     mine.add_argument("y", type=coordinate)
@@ -171,6 +173,9 @@ def main(argv=None):
         elif args.command == "inspect":
             client.acquire()
             display(client.request("inspect", x=args.x, y=args.y, radius=args.radius))
+        elif args.command == "observe":
+            client.acquire()
+            display(client.request("observe", radius=args.radius))
         elif args.command == "mine":
             client.acquire()
             display(client.mine(args.x, args.y, count=args.count, name=args.name))

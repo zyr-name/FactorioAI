@@ -55,7 +55,7 @@ def main():
         config.mkdir(parents=True)
         mods = data / "mods"
         mods.mkdir()
-        build(mods / "factorio-ai-companion_0.4.0.zip")
+        build(mods / "factorio-ai-companion_0.5.0.zip")
         (mods / "mod-list.json").write_text(json.dumps({"mods": [
             {"name": "base", "enabled": True}, {"name": "factorio-ai-companion", "enabled": True}]}))
         settings = json.loads((ROOT / "server/defaults/server-settings.json").read_text())
@@ -206,6 +206,46 @@ def main():
                 assert client.request("status")["inventory"] == inventory
                 print("PASS: inspect, timed mining/crafting, place, rotate and transfer produce one iron plate", flush=True)
                 print("PASS: repeated and rejected mutations do not lose or duplicate items or entities", flush=True)
+
+                transport.command(
+                    "/sc local s=game.surfaces.nauvis; "
+                    "local f=s.create_entity{name='stone-furnace',position={-2,4},force='player'}; "
+                    "f.get_inventory(defines.inventory.furnace_source).insert{name='iron-ore',count=1}; "
+                    "local a=s.create_entity{name='assembling-machine-1',position={4,4},force='player'}; "
+                    "a.set_recipe('iron-gear-wheel'); "
+                    "for _,e in pairs(s.find_entities_filtered{position={40.5,40.5},radius=1,type='resource'}) do e.destroy() end; "
+                    "s.create_entity{name='copper-ore',position={40.5,40.5},amount=987654}")
+                scene = json.loads(transport.command(
+                    "/sc local s=game.surfaces.nauvis; rcon.print(helpers.table_to_json{"
+                    "resources=#s.find_entities_filtered{position={40.5,40.5},radius=1,type='resource'},"
+                    "charted=game.forces.player.is_chunk_charted(s,{1,1})})"))
+                assert scene["resources"] == 1, scene
+                assert scene["charted"] is False, scene
+                observation = client.request("observe", radius=8)
+                assert observation["boundaries"]["max_local_radius"] == 32, observation
+                assert observation["self"]["inventory"] == inventory, observation
+                local_resources = {item["name"]: item for item in observation["local_area"]["resources"]}
+                assert local_resources["iron-ore"]["amount"] == 9, local_resources
+                buildings = observation["local_area"]["buildings"]
+                hungry_furnace = next(item for item in buildings
+                                      if item["name"] == "stone-furnace"
+                                      and item["position"]["y"] == 4)
+                assert hungry_furnace["reachable"], hungry_furnace
+                assert hungry_furnace["inventories"]["source"] == {"iron-ore:normal": 1}
+                task_kinds = {task["kind"] for task in observation["tasks"]}
+                assert {"missing_fuel", "missing_ingredients", "blocked_output"} <= task_kinds, observation["tasks"]
+                recipes = {recipe["name"]: recipe for recipe in observation["recipes"]["available"]}
+                assert recipes["stone-furnace"]["craftable_count"] == 1, recipes
+                map_resources = {item["name"]: item for item in observation["map"]["resources"]}
+                assert map_resources.get("copper-ore", {}).get("amount", 0) < 987654, map_resources
+                assert observation["map"]["charted_chunks"] >= observation["map"]["scanned_chunks"]
+                try:
+                    client.request("inspect", x=40, y=40, radius=1)
+                    raise AssertionError("Inspected remote map details without proximity")
+                except BridgeError as error:
+                    assert error.code == "out_of_observation_range", error
+                print("PASS: compact observations diagnose fuel, ingredient and output problems", flush=True)
+                print("PASS: local details require proximity while map summaries stay chart-limited", flush=True)
 
                 origin = client.request("status")["position"]
                 arrived = client.move(5, 0, relative=True)

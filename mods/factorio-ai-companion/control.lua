@@ -6,6 +6,12 @@ local ARRIVAL_DISTANCE = 0.28
 local MAX_REPLANS = 3
 local ACTION_HISTORY = 40
 local MAX_INSPECT_ENTITIES = 100
+local MAX_OBSERVATION_RADIUS = 32
+local MAX_MAP_CHUNKS = 256
+local MAX_MAP_ENTITIES = 20000
+local MAX_RECIPES = 50
+local MAX_LOCAL_BUILDINGS = 200
+local MAX_TASKS = 100
 local just_loaded = false
 
 local function valid_character()
@@ -92,7 +98,7 @@ end
 
 local function initialize()
   storage.bridge = storage.bridge or {}
-  storage.bridge.schema = 3
+  storage.bridge.schema = 4
   halt("configuration_changed")
   storage.bridge.session = nil
 end
@@ -166,7 +172,7 @@ local function status()
   local companion = bridge.companion
   local entity = valid_character()
   local result = {
-    tick = game.tick, protocol = 3, lease_ticks = LEASE_TICKS,
+    tick = game.tick, protocol = 4, lease_ticks = LEASE_TICKS,
     connected = bridge.session ~= nil,
     lease_remaining_ticks = bridge.session and math.max(0, bridge.session.expires_tick - game.tick) or 0,
     exists = entity ~= nil,
@@ -434,6 +440,10 @@ local function inspect(request)
   if not finite_number(radius) or radius < 0 or radius > 32 then
     fail("invalid_radius", "Inspection radius must be between 0 and 32 tiles.")
   end
+  local dx, dy = position.x - character.position.x, position.y - character.position.y
+  if math.sqrt(dx * dx + dy * dy) + radius > MAX_OBSERVATION_RADIUS then
+    fail("out_of_observation_range", "Inspection is limited to 32 tiles around the character.")
+  end
   local result = {position = position, radius = radius, entities = {}}
   local entities = character.surface.find_entities_filtered{position = position, radius = radius}
   for _, entity in ipairs(entities) do
@@ -454,6 +464,232 @@ local function inspect(request)
   end
   result.truncated = #entities - 1 > #result.entities
   return result
+end
+
+local function compact_items(items)
+  local result = {}
+  for _, item in ipairs(items or {}) do
+    result[#result + 1] = {
+      type = item.type, name = item.name, amount = item.amount,
+      amount_min = item.amount_min, amount_max = item.amount_max,
+      probability = item.probability
+    }
+  end
+  return result
+end
+
+local function sorted_aggregates(values, include_amount)
+  local result = {}
+  for name, value in pairs(values) do
+    local record = {name = name, count = value.count}
+    if include_amount then record.amount = value.amount end
+    if value.nearest then record.nearest = value.nearest end
+    result[#result + 1] = record
+  end
+  table.sort(result, function(left, right) return left.name < right.name end)
+  return result
+end
+
+local function aggregate_entity(values, entity, origin, include_amount)
+  local value = values[entity.name] or {count = 0, amount = 0}
+  value.count = value.count + 1
+  if include_amount then value.amount = value.amount + entity.amount end
+  local dx, dy = entity.position.x - origin.x, entity.position.y - origin.y
+  local distance = dx * dx + dy * dy
+  if not value.nearest_distance or distance < value.nearest_distance then
+    value.nearest_distance = distance
+    value.nearest = {x = entity.position.x, y = entity.position.y}
+  end
+  values[entity.name] = value
+end
+
+local function add_task(tasks, kind, priority, entity, details)
+  tasks[#tasks + 1] = {
+    kind = kind, priority = priority,
+    entity = {name = entity.name, position = {x = entity.position.x, y = entity.position.y}},
+    details = details
+  }
+end
+
+local function diagnose_machine(character, entity, tasks)
+  if not character.can_reach_entity(entity) then return end
+  local output = entity.get_output_inventory()
+  if output and not output.is_empty() and output.is_full() then
+    add_task(tasks, "blocked_output", 1, entity, {output = inventory_summary(output)})
+  end
+
+  local fuel = entity.get_fuel_inventory()
+  local input
+  if entity.type == "furnace" then
+    input = entity.get_inventory(defines.inventory.furnace_source)
+  elseif entity.type == "assembling-machine" or entity.type == "rocket-silo" then
+    input = entity.get_inventory(defines.inventory.assembling_machine_input)
+  end
+  local burning = entity.burner and entity.burner.remaining_burning_fuel > 0
+  if fuel and fuel.is_empty() and not burning and input and not input.is_empty() then
+    add_task(tasks, "missing_fuel", 2, entity, {input = inventory_summary(input)})
+  end
+
+  if entity.type == "assembling-machine" or entity.type == "rocket-silo" then
+    local recipe = entity.get_recipe()
+    if recipe and input then
+      local missing = {}
+      for _, ingredient in ipairs(recipe.ingredients) do
+        if ingredient.type == "item" then
+          local present = input.get_item_count(ingredient.name)
+          if present < ingredient.amount then
+            missing[#missing + 1] = {name = ingredient.name, count = ingredient.amount - present}
+          end
+        elseif ingredient.type == "fluid" then
+          local present = entity.get_fluid_count(ingredient.name)
+          if present < ingredient.amount then
+            missing[#missing + 1] = {
+              name = ingredient.name, amount = ingredient.amount - present, type = "fluid"
+            }
+          end
+        end
+      end
+      if #missing > 0 then
+        add_task(tasks, "missing_ingredients", 3, entity, {recipe = recipe.name, missing = missing})
+      end
+    end
+  end
+end
+
+local function recipe_observation(character)
+  local available = {}
+  local enabled_count = 0
+  local total_available = 0
+  for _, recipe in pairs(character.force.recipes) do
+    if recipe.enabled and not recipe.hidden then
+      enabled_count = enabled_count + 1
+      local craftable = character.get_craftable_count(recipe)
+      if craftable > 0 then
+        total_available = total_available + 1
+        available[#available + 1] = {
+          name = recipe.name, craftable_count = craftable, energy = recipe.energy,
+          ingredients = compact_items(recipe.ingredients), products = compact_items(recipe.products)
+        }
+      end
+    end
+  end
+  table.sort(available, function(left, right) return left.name < right.name end)
+  while #available > MAX_RECIPES do table.remove(available) end
+  return {
+    available = available, available_count = total_available,
+    enabled_count = enabled_count, truncated = total_available > #available
+  }
+end
+
+local function map_observation(character)
+  local surface, force = character.surface, character.force
+  local resources, buildings = {}, {}
+  local charted, scanned, entity_count = 0, 0, 0
+  local truncated = false
+  for chunk in surface.get_chunks() do
+    if force.is_chunk_charted(surface, chunk) then
+      charted = charted + 1
+      if scanned < MAX_MAP_CHUNKS and entity_count < MAX_MAP_ENTITIES then
+        scanned = scanned + 1
+        local area = {{chunk.x * 32, chunk.y * 32}, {(chunk.x + 1) * 32, (chunk.y + 1) * 32}}
+        for _, entity in ipairs(surface.find_entities_filtered{area = area, type = "resource"}) do
+          if entity_count < MAX_MAP_ENTITIES and math.floor(entity.position.x / 32) == chunk.x
+              and math.floor(entity.position.y / 32) == chunk.y then
+            aggregate_entity(resources, entity, character.position, true)
+            entity_count = entity_count + 1
+          elseif entity_count >= MAX_MAP_ENTITIES then
+            truncated = true
+          end
+        end
+        for _, entity in ipairs(surface.find_entities_filtered{area = area, force = force}) do
+          if entity_count < MAX_MAP_ENTITIES and entity ~= character
+              and math.floor(entity.position.x / 32) == chunk.x
+              and math.floor(entity.position.y / 32) == chunk.y then
+            aggregate_entity(buildings, entity, character.position, false)
+            entity_count = entity_count + 1
+          elseif entity_count >= MAX_MAP_ENTITIES then
+            truncated = true
+          end
+        end
+      else
+        truncated = true
+      end
+    end
+  end
+  return {
+    charted_chunks = charted, scanned_chunks = scanned, entity_count = entity_count,
+    truncated = truncated or charted > scanned,
+    resources = sorted_aggregates(resources, true),
+    buildings = sorted_aggregates(buildings, false)
+  }
+end
+
+local function observe(request)
+  local character = valid_character()
+  local radius = request.radius or 16
+  if not finite_number(radius) or radius < 1 or radius > MAX_OBSERVATION_RADIUS then
+    fail("invalid_radius", "Observation radius must be between 1 and 32 tiles.")
+  end
+  local resources, buildings, tasks = {}, {}, {}
+  local entities = character.surface.find_entities_filtered{position = character.position, radius = radius}
+  for _, entity in ipairs(entities) do
+    if entity.type == "resource" then
+      aggregate_entity(resources, entity, character.position, true)
+    elseif entity ~= character and entity.force == character.force then
+      local summary = entity_summary(entity)
+      summary.reachable = character.can_reach_entity(entity)
+      if summary.reachable then
+        summary.inventories = {}
+        for selector, inventory_id in pairs(inventory_defines) do
+          local inventory = entity.get_inventory(inventory_id)
+          if inventory then summary.inventories[selector] = inventory_summary(inventory) end
+        end
+        if entity.type == "furnace" or entity.type == "assembling-machine"
+            or entity.type == "rocket-silo" then
+          local recipe = entity.get_recipe()
+          summary.recipe = recipe and recipe.name or nil
+        end
+      end
+      buildings[#buildings + 1] = summary
+      diagnose_machine(character, entity, tasks)
+    end
+  end
+  table.sort(buildings, function(left, right)
+    if left.name == right.name then
+      if left.position.x == right.position.x then return left.position.y < right.position.y end
+      return left.position.x < right.position.x
+    end
+    return left.name < right.name
+  end)
+  table.sort(tasks, function(left, right)
+    if left.priority == right.priority then return left.kind < right.kind end
+    return left.priority < right.priority
+  end)
+  local building_count, task_count = #buildings, #tasks
+  while #buildings > MAX_LOCAL_BUILDINGS do table.remove(buildings) end
+  while #tasks > MAX_TASKS do table.remove(tasks) end
+  return {
+    tick = game.tick,
+    boundaries = {
+      local_radius = radius, max_local_radius = MAX_OBSERVATION_RADIUS,
+      details = "Entity details are local; inventories and diagnoses require interaction reach.",
+      map = "Map summaries include only force-charted chunks.",
+      map_chunk_cap = MAX_MAP_CHUNKS, map_entity_cap = MAX_MAP_ENTITIES,
+      local_building_cap = MAX_LOCAL_BUILDINGS, task_cap = MAX_TASKS
+    },
+    self = {
+      position = {x = character.position.x, y = character.position.y},
+      surface = character.surface.name, inventory = inventory_contents(character)
+    },
+    local_area = {
+      resources = sorted_aggregates(resources, true), buildings = buildings,
+      entity_count = #entities - 1, building_count = building_count,
+      buildings_truncated = building_count > #buildings
+    },
+    map = map_observation(character),
+    recipes = recipe_observation(character),
+    tasks = tasks, tasks_truncated = task_count > #tasks
+  }
 end
 
 local function begin_operation(request, target)
@@ -662,6 +898,7 @@ local function dispatch(request)
   end
   if request.action == "move" then return begin_move(request) end
   if request.action == "inspect" then return inspect(request) end
+  if request.action == "observe" then return observe(request) end
   if request.action == "mine" then return begin_mine(request) end
   if request.action == "craft" then return begin_craft(request) end
   if request.action == "place" then return place(request) end

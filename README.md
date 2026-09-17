@@ -151,13 +151,17 @@ IDs do not lose or duplicate items or entities.
 
 ### 3. World understanding
 
-- [ ] Describe nearby resources, buildings, recipes, inventories, and tasks in
+- [x] Describe nearby resources, buildings, recipes, inventories, and tasks in
   compact structured observations.
-- [ ] Detect missing fuel, missing ingredients, and blocked outputs in prepared scenes.
-- [ ] Implement and document observation boundaries, initially local surroundings
+- [x] Detect missing fuel, missing ingredients, and blocked outputs in prepared scenes.
+- [x] Implement and document observation boundaries, initially local surroundings
   plus the team's explored map, with close inspection requiring proximity.
 
-**Done when:** small repeatable scenes produce correct, useful diagnoses.
+Verified in a disposable Factorio 2.0.77 world on **2026-09-17** with repeatable
+unfueled-furnace, ingredient-starved-assembler, blocked-output, and uncharted
+remote-resource scenes. Detailed inspection is limited to 32 tiles and machine
+inventories/diagnoses require interaction reach; wider summaries include only
+force-charted chunks.
 
 ### 4. One model-controlled worker
 

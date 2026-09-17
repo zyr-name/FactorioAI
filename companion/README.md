@@ -29,7 +29,7 @@ Every joining game client needs the same mod ZIP. Build it with:
 bin/companion package
 ```
 
-Copy the generated `dist/factorio-ai-companion_0.4.0.zip` into the Factorio client's `mods`
+Copy the generated `dist/factorio-ai-companion_0.5.0.zip` into the Factorio client's `mods`
 directory. On macOS that is normally
 `~/Library/Application Support/factorio/mods/`. Restart Factorio after copying.
 
@@ -43,6 +43,7 @@ directory. On macOS that is normally
 | `bin/companion move DX DY --relative` | Walk by an offset and wait for arrival |
 | `bin/companion move X Y --radius 3` | Walk to any reachable point within interaction range |
 | `bin/companion inspect X Y --radius 8` | List nearby entities and inventories that are within reach |
+| `bin/companion observe --radius 16` | Summarize local resources/buildings, explored map, craftable recipes, and machine tasks |
 | `bin/companion mine X Y --name iron-ore` | Mine a reachable entity using its normal mining time |
 | `bin/companion craft stone-furnace --count 1` | Hand-craft an enabled recipe with inventory ingredients |
 | `bin/companion place stone-furnace X Y` | Consume and place an inventory item within build reach |
@@ -66,6 +67,22 @@ the character/force mining speed before Factorio performs the yield and capacity
 check. Crafting and furnace processing use Factorio's native queues and recipes.
 Every command ID is idempotent and retains a
 bounded queued/running/completed/failed/cancelled action record.
+
+## Observation boundaries
+
+`observe` is deliberately narrower than the Lua API's omniscient view. Local
+resources and player-force buildings are reported within 1–32 tiles around the
+character. Machine inventories, selected recipes, and diagnoses are included
+only while the character can interact with the entity. The wider map section
+aggregates resources and buildings only from chunks charted by the player force;
+it never reveals generated-but-unexplored chunks. Local building details are
+capped at 200 entries and diagnoses at 100; map scans are capped at 256 charted
+chunks and 20,000 entities, and recipe lists at 50 entries. Every bounded section
+reports whether it was truncated.
+
+Available recipes are enabled, non-hidden recipes the current character can
+craft from its inventory. Machine tasks are sorted by urgency and currently
+diagnose a blocked output, missing burner fuel, and missing recipe ingredients.
 
 For a remote development server, keep RCON private and forward it over SSH:
 
@@ -94,5 +111,5 @@ python3 tests/companion_smoke.py
 
 It verifies idempotent spawning, inventory preservation, normal movement,
 collision blocking, exclusive control, duplicate handling, emergency stop,
-craft cancellation/refunds, inspect/mine/craft/place/rotate/transfer, a timed
+craft cancellation/refunds, inspect/observe/mine/craft/place/rotate/transfer, a timed
 furnace-to-iron-plate sequence, forced-process-death cleanup, and save/restart/reconnect.
