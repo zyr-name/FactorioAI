@@ -25,6 +25,12 @@ observations and one schema-validated action per turn. The portal shows its
 current phase, objective, latest decision, failures, and recovery attempts, and
 provides pause, resume, and stop controls. `scripted` remains the passive default.
 
+An instruction such as `Build a sustainable iron smelting setup` switches to the
+factory planner. It proposes a burner-drill/stone-furnace layout, preflights the full
+plan without changing the world, builds and fuels it transactionally, and reports
+success only after the furnace's iron-plate output grows across two samples. Failed
+placement or production checks roll the new entities back before redesigning.
+
 `install-companion` creates a complete backup, installs/enables the mod, and
 sets `auto_pause=false` so movement and the disconnect watchdog continue when
 no human is connected. It preserves an existing character when updating the
@@ -36,7 +42,7 @@ Every joining game client needs the same mod ZIP. Build it with:
 bin/companion package
 ```
 
-Copy the generated `dist/factorio-ai-companion_0.5.0.zip` into the Factorio client's `mods`
+Copy the generated `dist/factorio-ai-companion_0.6.0.zip` into the Factorio client's `mods`
 directory. On macOS that is normally
 `~/Library/Application Support/factorio/mods/`. Restart Factorio after copying.
 
@@ -116,7 +122,15 @@ The Docker smoke test creates and removes its own data and container:
 python3 tests/companion_smoke.py
 ```
 
+The factory acceptance test has deterministic and real-model modes:
+
+```bash
+python3 tests/factory_challenge.py sequence
+python3 tests/factory_challenge.py qwen3:8b
+```
+
 It verifies idempotent spawning, inventory preservation, normal movement,
 collision blocking, exclusive control, duplicate handling, emergency stop,
-craft cancellation/refunds, inspect/observe/mine/craft/place/rotate/transfer, a timed
+craft cancellation/refunds, inspect/observe/mine/craft/place/rotate/transfer, plan
+preflight, a timed
 furnace-to-iron-plate sequence, forced-process-death cleanup, and save/restart/reconnect.

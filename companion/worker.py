@@ -9,6 +9,7 @@ import time
 from companion.cli import endpoint
 from companion.agent import AgentRuntime, parse_goal
 from companion.client import ActionInterrupted, BridgeError, Companion
+from companion.factory import FactoryRuntime, is_factory_goal
 from companion.models import ModelError, adapter_for
 from companion.rcon import RconClient, RconError
 
@@ -69,10 +70,16 @@ def main(argv=None):
         client.acquire()
         emit("started", player_id=args.player_id, status=state)
         if args.model != "scripted":
-            runtime = AgentRuntime(
-                client, adapter_for(args.model, args.ollama_endpoint), parse_goal(args.instructions),
-                emit=lambda **event: emit("agent", **event),
-            )
+            adapter = adapter_for(args.model, args.ollama_endpoint)
+            if is_factory_goal(args.instructions):
+                runtime = FactoryRuntime(
+                    client, adapter, args.instructions, emit=lambda **event: emit("agent", **event),
+                )
+            else:
+                runtime = AgentRuntime(
+                    client, adapter, parse_goal(args.instructions),
+                    emit=lambda **event: emit("agent", **event),
+                )
             while not stop[0]:
                 try:
                     runtime.run(control=control)

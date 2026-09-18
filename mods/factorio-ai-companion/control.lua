@@ -98,7 +98,7 @@ end
 
 local function initialize()
   storage.bridge = storage.bridge or {}
-  storage.bridge.schema = 4
+  storage.bridge.schema = 5
   halt("configuration_changed")
   storage.bridge.session = nil
 end
@@ -172,7 +172,7 @@ local function status()
   local companion = bridge.companion
   local entity = valid_character()
   local result = {
-    tick = game.tick, protocol = 4, lease_ticks = LEASE_TICKS,
+    tick = game.tick, protocol = 5, lease_ticks = LEASE_TICKS,
     connected = bridge.session ~= nil,
     lease_remaining_ticks = bridge.session and math.max(0, bridge.session.expires_tick - game.tick) or 0,
     exists = entity ~= nil,
@@ -401,7 +401,105 @@ local function entity_summary(entity)
   }
   if entity.health then result.health = entity.health end
   if entity.type == "resource" then result.amount = entity.amount end
+  if entity.type == "mining-drill" then
+    result.drop_position = {x = entity.drop_position.x, y = entity.drop_position.y}
+    if entity.drop_target and entity.drop_target.valid then
+      result.drop_target = {
+        name = entity.drop_target.name,
+        position = {x = entity.drop_target.position.x, y = entity.drop_target.position.y}
+      }
+    end
+    if entity.mining_target and entity.mining_target.valid then
+      result.mining_target = {
+        name = entity.mining_target.name,
+        position = {x = entity.mining_target.position.x, y = entity.mining_target.position.y}
+      }
+    end
+  end
   return result
+end
+
+local function rotated_box(prototype, position, direction)
+  local box = prototype.collision_box
+  local points = {
+    {x = box.left_top.x, y = box.left_top.y},
+    {x = box.right_bottom.x, y = box.left_top.y},
+    {x = box.right_bottom.x, y = box.right_bottom.y},
+    {x = box.left_top.x, y = box.right_bottom.y}
+  }
+  local left, top, right, bottom
+  for _, point in ipairs(points) do
+    local x, y = point.x, point.y
+    if direction == defines.direction.east then
+      x, y = -point.y, point.x
+    elseif direction == defines.direction.south then
+      x, y = -point.x, -point.y
+    elseif direction == defines.direction.west then
+      x, y = point.y, -point.x
+    end
+    x, y = x + position.x, y + position.y
+    left, top = math.min(left or x, x), math.min(top or y, y)
+    right, bottom = math.max(right or x, x), math.max(bottom or y, y)
+  end
+  return {left_top = {x = left, y = top}, right_bottom = {x = right, y = bottom}}
+end
+
+local function boxes_overlap(left, right)
+  return left.left_top.x < right.right_bottom.x
+      and left.right_bottom.x > right.left_top.x
+      and left.left_top.y < right.right_bottom.y
+      and left.right_bottom.y > right.left_top.y
+end
+
+local function validate_plan(request)
+  local character = valid_character()
+  local placements = request.placements
+  if type(placements) ~= "table" or #placements < 1 or #placements > 20 then
+    fail("invalid_plan", "Plan must contain 1..20 placements.")
+  end
+  local inventory = character.get_inventory(defines.inventory.character_main)
+  local required, seen, validated = {}, {}, {}
+  for index, placement in ipairs(placements) do
+    if type(placement) ~= "table" or not identifier(placement.id) or seen[placement.id] then
+      fail("invalid_plan", "Placement " .. index .. " needs a unique id.")
+    end
+    seen[placement.id] = true
+    if type(placement.item) ~= "string" then
+      fail("invalid_plan", "Placement " .. placement.id .. " needs an item.")
+    end
+    local item = prototypes.item[placement.item]
+    local placed = item and item.place_result
+    if not placed then fail("not_placeable", "Placement " .. placement.id .. " has no placeable item.") end
+    local position = {x = placement.x, y = placement.y}
+    if not finite_number(position.x) or not finite_number(position.y) then
+      fail("invalid_plan", "Placement " .. placement.id .. " has invalid coordinates.")
+    end
+    local direction = placement.direction or defines.direction.north
+    if direction ~= defines.direction.north and direction ~= defines.direction.east
+        and direction ~= defines.direction.south and direction ~= defines.direction.west then
+      fail("invalid_direction", "Placement " .. placement.id .. " must use a cardinal direction.")
+    end
+    required[placement.item] = (required[placement.item] or 0) + 1
+    if required[placement.item] > inventory.get_item_count(placement.item) then
+      fail("missing_item", "The plan needs more " .. placement.item .. " than the character has.")
+    end
+    local build = {name = placed.name, position = position, direction = direction, force = character.force}
+    if not character.can_place_entity(build) then
+      fail("cannot_place", "Placement " .. placement.id .. " is blocked, invalid, or out of reach.")
+    end
+    local candidate = {
+      id = placement.id, item = placement.item, entity = placed.name,
+      position = position, direction = direction,
+      collision_box = rotated_box(placed, position, direction)
+    }
+    for _, previous in ipairs(validated) do
+      if boxes_overlap(candidate.collision_box, previous.collision_box) then
+        fail("plan_collision", "Placements " .. previous.id .. " and " .. candidate.id .. " overlap.")
+      end
+    end
+    validated[#validated + 1] = candidate
+  end
+  return {valid = true, placements = validated}
 end
 
 local inventory_defines = {
@@ -899,6 +997,7 @@ local function dispatch(request)
   if request.action == "move" then return begin_move(request) end
   if request.action == "inspect" then return inspect(request) end
   if request.action == "observe" then return observe(request) end
+  if request.action == "validate_plan" then return validate_plan(request) end
   if request.action == "mine" then return begin_mine(request) end
   if request.action == "craft" then return begin_craft(request) end
   if request.action == "place" then return place(request) end
