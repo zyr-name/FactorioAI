@@ -29,7 +29,8 @@ class PlayerManager:
                 raise ValueError("Unknown AI player.")
             run_id = self.store.start_run(player_id)
             command = [
-                sys.executable, "-m", "companion.worker", "--player-id", player_id, "--name", player["name"]
+                sys.executable, "-m", "companion.worker", "--player-id", player_id, "--name", player["name"],
+                "--model", player["model"], "--instructions", player["instructions"],
             ]
             environment = os.environ.copy()
             environment["PYTHONPATH"] = str(ROOT) + (os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else "")
@@ -42,7 +43,9 @@ class PlayerManager:
                 self.store.finish_run(run_id, "failed", "Could not start worker process.")
                 raise
             self.processes[player_id] = (process, run_id)
-            self.states[player_id] = {"state": "starting", "pid": process.pid, "game": None, "error": None}
+            self.states[player_id] = {
+                "state": "starting", "pid": process.pid, "game": None, "agent": None, "error": None,
+            }
             threading.Thread(target=self._read, args=(player_id, process, run_id), daemon=True).start()
             return self.status(player_id)
 
@@ -67,6 +70,9 @@ class PlayerManager:
                 elif kind == "error":
                     error = event.get("error", "Worker failed.")
                     state.update(state="failed", error=error)
+                elif kind == "agent":
+                    state["agent"] = event
+                    state["state"] = "paused" if event.get("phase") == "paused" else "running"
                 elif kind == "stopping":
                     state["state"] = "stopping"
         return_code = process.wait()
@@ -76,7 +82,8 @@ class PlayerManager:
             self.store.finish_run(run_id, outcome, error)
             self.states[player_id] = {
                 "state": "stopped" if outcome == "stopped" else "failed",
-                "pid": None, "game": self.states.get(player_id, {}).get("game"), "error": error,
+                "pid": None, "game": self.states.get(player_id, {}).get("game"),
+                "agent": self.states.get(player_id, {}).get("agent"), "error": error,
             }
             current = self.processes.get(player_id)
             if current and current[0] is process:
@@ -89,11 +96,7 @@ class PlayerManager:
                 return self.status(player_id)
             process = current[0]
             self.states[player_id]["requested_stop"] = True
-            try:
-                process.stdin.write("stop\n")
-                process.stdin.flush()
-            except (BrokenPipeError, OSError):
-                pass
+            self._write(process, "stop")
         try:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -104,9 +107,39 @@ class PlayerManager:
                 process.kill()
         return self.status(player_id)
 
+    @staticmethod
+    def _write(process, command):
+        try:
+            process.stdin.write(command + "\n")
+            process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+
+    def pause(self, player_id):
+        with self.lock:
+            current = self.processes.get(player_id)
+            if (not current or current[0].poll() is not None
+                    or self.states.get(player_id, {}).get("state") != "running"):
+                raise ValueError("AI player is not running.")
+            self._write(current[0], "pause")
+            self.states[player_id]["state"] = "pausing"
+            return self.status(player_id)
+
+    def resume(self, player_id):
+        with self.lock:
+            current = self.processes.get(player_id)
+            if (not current or current[0].poll() is not None
+                    or self.states.get(player_id, {}).get("state") != "paused"):
+                raise ValueError("AI player is not paused.")
+            self._write(current[0], "resume")
+            self.states[player_id]["state"] = "running"
+            return self.status(player_id)
+
     def status(self, player_id):
         with self.lock:
-            return dict(self.states.get(player_id, {"state": "stopped", "pid": None, "game": None, "error": None}))
+            return dict(self.states.get(player_id, {
+                "state": "stopped", "pid": None, "game": None, "agent": None, "error": None,
+            }))
 
     def all(self):
         result = []

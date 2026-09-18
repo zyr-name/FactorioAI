@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from portal.players import PlayerManager
 from portal.service import ServerService
 from portal.store import Store
 
@@ -35,6 +36,33 @@ class StoreTests(unittest.TestCase):
     def test_unknown_player_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown"):
             self.store.update_player("missing", {"name": "Nobody"})
+
+    def test_player_pause_and_resume_send_cooperative_commands(self):
+        class Input:
+            def __init__(self):
+                self.value = ""
+
+            def write(self, value):
+                self.value += value
+
+            def flush(self):
+                pass
+
+        class Process:
+            stdin = Input()
+
+            @staticmethod
+            def poll():
+                return None
+
+        manager = PlayerManager(self.store)
+        process = Process()
+        manager.processes["ada"] = (process, 1)
+        manager.states["ada"] = {"state": "running", "pid": 42, "game": None, "agent": {}}
+        self.assertEqual(manager.pause("ada")["state"], "pausing")
+        manager.states["ada"]["state"] = "paused"
+        self.assertEqual(manager.resume("ada")["state"], "running")
+        self.assertEqual(process.stdin.value, "pause\nresume\n")
 
 
 class ServerServiceTests(unittest.TestCase):

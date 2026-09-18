@@ -44,7 +44,7 @@ function render() {
   $('#server-indicator').className = `status-orb ${server.state}`;
   $('#live-dot').className = `dot ${running ? 'up' : ''}`;
   $('#live-label').textContent = running ? 'Local stack online' : 'Portal online';
-  $('#metric-players').textContent = state.players.filter(player => player.runtime.state === 'running').length;
+  $('#metric-players').textContent = state.players.filter(player => ['starting','running','pausing','paused'].includes(player.runtime.state)).length;
   $('#metric-players-note').textContent = `active · ${state.players.length} configured`;
   $('#metric-backups').textContent = state.backups.length;
   $('#metric-version').textContent = state.configuration.environment.FACTORIO_VERSION || '—';
@@ -66,6 +66,7 @@ function render() {
   const playersList = $('#players-list');
   if (!playersList.contains(document.activeElement)) playersList.innerHTML = state.players.map(player => {
     const runtime = player.runtime;
+    const agent = runtime.agent;
     const gameStats = runtime.game?.statistics || {};
     const actions = runtime.game?.actions || [];
     const events = player.statistics.events.slice(0, 8);
@@ -74,8 +75,9 @@ function render() {
         <div class="player-title"><div class="avatar">${escapeHtml(player.name.slice(0,1).toUpperCase())}</div><div><h3>${escapeHtml(player.name)}</h3><span class="runtime-state ${runtime.state}">${escapeHtml(runtime.state)}${runtime.pid ? ` · PID ${runtime.pid}` : ''}</span></div></div>
         ${runtime.error ? `<p class="muted">${escapeHtml(runtime.error)}</p>` : ''}
         <div class="button-row">
-          <button class="primary" data-player-action="start" ${['running','starting'].includes(runtime.state) ? 'disabled' : ''}>Start player</button>
-          <button data-player-action="stop" ${!['running','starting','stopping'].includes(runtime.state) ? 'disabled' : ''}>Stop</button>
+          <button class="primary" data-player-action="start" ${['running','starting','pausing','paused'].includes(runtime.state) ? 'disabled' : ''}>Start player</button>
+          <button data-player-action="${runtime.state === 'paused' ? 'resume' : 'pause'}" ${!agent || !['running','paused'].includes(runtime.state) ? 'disabled' : ''}>${runtime.state === 'paused' ? 'Resume' : 'Pause'}</button>
+          <button data-player-action="stop" ${!['running','starting','pausing','paused','stopping'].includes(runtime.state) ? 'disabled' : ''}>Stop</button>
         </div>
         <div class="stats">
           <div><strong>${player.statistics.runs}</strong><span>RUNS</span></div>
@@ -89,6 +91,10 @@ function render() {
         </div>
       </div>
       <div class="player-main">
+        <div class="activity"><div class="card-label">AGENT STATUS</div>${agent ? `
+          <div class="event"><time>${escapeHtml(agent.phase)}</time><span>${escapeHtml(agent.objective?.item || '')} ${escapeHtml(agent.verified?.count ?? '')}</span><code>${escapeHtml(agent.objective?.text || '')}</code></div>
+          <div class="event"><time>${escapeHtml(agent.decisions)} decisions</time><span>${escapeHtml(agent.failures)} failures · ${escapeHtml(agent.recoveries)} recoveries</span><code>${escapeHtml(agent.last_action ? `${agent.last_action.action}: ${agent.last_action.reason}` : 'Waiting for the first decision')}</code></div>
+        ` : '<p class="muted">Start an Ollama-backed player to see its current task and reasoning.</p>'}</div>
         <form class="player-form">
           <div class="player-grid">
             <label>Name<input name="name" value="${escapeHtml(player.name)}"></label>

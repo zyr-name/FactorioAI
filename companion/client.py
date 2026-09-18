@@ -1,5 +1,6 @@
 """Versioned bridge requests and one controller lease."""
 import json
+import threading
 import time
 import uuid
 
@@ -10,16 +11,26 @@ class BridgeError(RuntimeError):
         super().__init__(code + ": " + message)
 
 
+class ActionInterrupted(RuntimeError):
+    """Raised when the worker is paused or stopped during a long game action."""
+
+    def __init__(self, command):
+        self.command = command
+        super().__init__(command)
+
+
 class Companion:
     def __init__(self, transport):
         self.transport = transport
         self.session = None
+        self._request_lock = threading.RLock()
 
     def request(self, action, **fields):
-        request = {"version": 1, "id": uuid.uuid4().hex, "action": action, **fields}
-        if self.session is not None:
-            request["session"] = self.session
-        raw = self.transport.command("/companion " + json.dumps(request, separators=(",", ":"), allow_nan=False))
+        with self._request_lock:
+            request = {"version": 1, "id": uuid.uuid4().hex, "action": action, **fields}
+            if self.session is not None:
+                request["session"] = self.session
+            raw = self.transport.command("/companion " + json.dumps(request, separators=(",", ":"), allow_nan=False))
         try:
             response = json.loads(raw)
         except json.JSONDecodeError as error:
@@ -46,32 +57,35 @@ class Companion:
             finally:
                 self.session = None
 
-    def move(self, x, y, relative=False, radius=0.28, timeout=65):
+    def move(self, x, y, relative=False, radius=0.28, timeout=65, control=None):
         current = self.request("status")
         if relative:
             x += current["position"]["x"]
             y += current["position"]["y"]
         state = self.request("move", x=x, y=y, radius=radius)
         command_id = state["motion"]["command_id"]
-        return self.wait_for_action(state, command_id, "Move", timeout)
+        return self.wait_for_action(state, command_id, "Move", timeout, control)
 
-    def mine(self, x, y, count=1, name=None, timeout=300):
+    def mine(self, x, y, count=1, name=None, timeout=300, control=None):
         fields = {"x": x, "y": y, "count": count}
         if name:
             fields["name"] = name
         state = self.request("mine", **fields)
-        return self.wait_for_action(state, self._newest_action_id(state), "Mining", timeout)
+        return self.wait_for_action(state, self._newest_action_id(state), "Mining", timeout, control)
 
-    def craft(self, recipe, count=1, timeout=300):
+    def craft(self, recipe, count=1, timeout=300, control=None):
         state = self.request("craft", recipe=recipe, count=count)
-        return self.wait_for_action(state, self._newest_action_id(state), "Crafting", timeout)
+        return self.wait_for_action(state, self._newest_action_id(state), "Crafting", timeout, control)
 
-    def wait_for_action(self, state, command_id, label="Action", timeout=300):
+    def wait_for_action(self, state, command_id, label="Action", timeout=300, control=None):
         deadline = time.monotonic() + timeout
         last_tick = state["tick"]
         tick_changed = time.monotonic()
         action = self._action(state, command_id)
         while action and action["state"] in {"queued", "running"}:
+            command = control() if control else None
+            if command in {"pause", "stop"}:
+                raise ActionInterrupted(command)
             time.sleep(0.3)
             state = self.request("heartbeat")
             action = self._action(state, command_id)
