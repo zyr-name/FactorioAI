@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the first real-model job in a disposable Factorio world."""
+"""Have a real local model design and build a sustained smelting setup."""
 import json
 import os
 from pathlib import Path
@@ -13,9 +13,9 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from companion.agent import AgentRuntime, parse_goal
 from companion.client import BridgeError, Companion
-from companion.models import OllamaAdapter
+from companion.factory import FactoryRuntime
+from companion.models import OllamaAdapter, SequencePlanAdapter
 from companion.package import build
 from companion.rcon import RconClient, RconError
 
@@ -26,10 +26,10 @@ def docker(*args):
 
 def main():
     model = sys.argv[1] if len(sys.argv) > 1 else "qwen3:8b"
-    name = "factorio-model-challenge-" + uuid.uuid4().hex[:10]
+    name = "factorio-factory-challenge-" + uuid.uuid4().hex[:10]
     password = secrets.token_urlsafe(24)
     transport = None
-    with tempfile.TemporaryDirectory(prefix="factorio-model-challenge-") as directory:
+    with tempfile.TemporaryDirectory(prefix="factorio-factory-challenge-") as directory:
         data = Path(directory) / "data"
         config, mods = data / "config", data / "mods"
         config.mkdir(parents=True)
@@ -70,41 +70,60 @@ def main():
                 raise RuntimeError("Disposable Factorio server did not start.")
 
             client.request("spawn", name="Ada")
-            position = client.request("status")["position"]
-            furnace = {"x": position["x"] + 2, "y": position["y"]}
-            # A fresh server consumes the first /sc command to enable scripting.
-            # Warm it up harmlessly before preparing this disposable scene.
-            transport.command("/sc rcon.print('model-challenge-scripting-enabled')")
+            transport.command("/sc rcon.print('factory-challenge-scripting-enabled')")
             setup_output = transport.command(
                 "/sc local s=game.surfaces.nauvis; local c=s.find_entities_filtered{type='character'}[1]; "
-                "for _,e in pairs(s.find_entities_filtered{area={{c.position.x-8,c.position.y-8},"
-                "{c.position.x+8,c.position.y+8}},type={'tree','simple-entity','cliff'}}) do e.destroy() end; "
-                "c.insert{name='iron-ore',count=20}; c.insert{name='coal',count=2}; "
-                "s.create_entity{name='stone-furnace',position={"
-                + str(furnace["x"]) + "," + str(furnace["y"]) + "},force='player'}"
+                "for _,e in pairs(s.find_entities_filtered{area={{-12,-12},{12,12}}}) do "
+                "if e~=c and e.type~='character' then e.destroy() end end; "
+                "local tiles={}; for x=-12,12 do for y=-12,12 do "
+                "tiles[#tiles+1]={name='grass-1',position={x,y}} end end; s.set_tiles(tiles); "
+                "c.teleport({5,0}); c.insert{name='burner-mining-drill',count=1}; "
+                "c.insert{name='stone-furnace',count=1}; c.insert{name='coal',count=10}; "
+                "for x=-1,0 do for y=-1,0 do s.create_entity{name='iron-ore',"
+                "position={x+0.5,y+0.5},amount=10000} end end; "
+                "for x=-1,2 do "
+                "s.create_entity{name='stone-wall',position={x,-3},force='player'} end"
             )
             client.acquire()
             prepared = client.request("observe", radius=16)
-            if prepared["self"]["inventory"].get("iron-ore:normal") != 20 or not any(
-                entity["name"] == "stone-furnace" for entity in prepared["local_area"]["buildings"]
-            ):
-                raise RuntimeError("Challenge scene setup failed: " + setup_output + " " + json.dumps(prepared))
-            events = []
+            inventory = prepared["self"]["inventory"]
+            resources = prepared["local_area"]["resources"]
+            if (inventory.get("burner-mining-drill:normal") != 1
+                    or inventory.get("stone-furnace:normal") != 1
+                    or not any(value["name"] == "iron-ore" for value in resources)):
+                raise RuntimeError("Factory scene setup failed: " + setup_output + " " + json.dumps(prepared))
 
             def record(**event):
-                events.append(event)
                 print(json.dumps(event, separators=(",", ":")), flush=True)
 
-            runtime = AgentRuntime(
-                client, OllamaAdapter(model), parse_goal("Produce 20 iron plates from available supplies."),
-                emit=record, max_decisions=30, max_seconds=300, max_consecutive_failures=5,
+            if model == "sequence":
+                adapter = SequencePlanAdapter([{
+                    "name": "deterministic direct smelter", "reason": "Exercise real mechanics.",
+                    "placements": [
+                        {"id": "drill", "item": "burner-mining-drill", "x": 0, "y": 0,
+                         "direction": 4},
+                        {"id": "furnace", "item": "stone-furnace", "x": 2, "y": 0,
+                         "direction": 0},
+                    ],
+                    "connections": [{"from": "drill", "to": "furnace", "kind": "direct-output"}],
+                    "supplies": [
+                        {"entity": "drill", "inventory": "fuel", "item": "coal", "count": 1},
+                        {"entity": "furnace", "inventory": "fuel", "item": "coal", "count": 1},
+                    ],
+                }])
+            else:
+                adapter = OllamaAdapter(model)
+            runtime = FactoryRuntime(
+                client, adapter,
+                "Build a sustainable iron smelting setup from the available materials.",
+                emit=record, max_designs=4, max_seconds=300, sample_seconds=12,
             )
             started = time.monotonic()
-            result = runtime.run()
+            verified = runtime.run()
             summary = {
-                "model": model, "verified_iron_plates": result["self"]["inventory"]["iron-plate:normal"],
-                "decisions": runtime.decisions, "failures": runtime.failures,
+                "model": model, "designs": runtime.designs, "failures": runtime.failures,
                 "recoveries": runtime.recoveries, "wall_seconds": round(time.monotonic() - started, 2),
+                **verified,
             }
             print("PASS: " + json.dumps(summary, sort_keys=True), flush=True)
         finally:

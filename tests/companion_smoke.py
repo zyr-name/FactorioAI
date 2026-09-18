@@ -55,7 +55,7 @@ def main():
         config.mkdir(parents=True)
         mods = data / "mods"
         mods.mkdir()
-        build(mods / "factorio-ai-companion_0.5.0.zip")
+        build(mods / "factorio-ai-companion_0.6.0.zip")
         (mods / "mod-list.json").write_text(json.dumps({"mods": [
             {"name": "base", "enabled": True}, {"name": "factorio-ai-companion", "enabled": True}]}))
         settings = json.loads((ROOT / "server/defaults/server-settings.json").read_text())
@@ -152,6 +152,16 @@ def main():
                 assert craft_action["finished_tick"] - craft_action["started_tick"] >= 20, craft_action
                 assert "stone-furnace:normal" in crafted["inventory"], crafted
                 assert crafted["inventory"]["stone:normal"] == 5, crafted
+
+                preflight = client.request("validate_plan", placements=[
+                    {"id": "furnace", "item": "stone-furnace", "x": furnace_x,
+                     "y": furnace_y, "direction": 0},
+                    {"id": "belt", "item": "transport-belt", "x": belt_x,
+                     "y": belt_y, "direction": 0},
+                ])
+                assert preflight["valid"] and len(preflight["placements"]) == 2, preflight
+                assert "stone-furnace:normal" in client.request("status")["inventory"]
+                print("PASS: plan preflight validates inventory and placement without mutation", flush=True)
 
                 place_id = uuid.uuid4().hex
                 placed = client.request("place", id=place_id, item="stone-furnace",

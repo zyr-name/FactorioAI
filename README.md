@@ -206,9 +206,23 @@ from simple missing-supply or blocked-action situations.
 
 ### 5. Factory designer
 
-- [ ] Propose a small smelting layout and construction sequence.
-- [ ] Validate available materials, placement, reach, and connections before execution.
-- [ ] Build the setup and recover from a failed placement or connection.
+- [x] Propose a small smelting layout and construction sequence.
+- [x] Validate available materials, placement, reach, and connections before execution.
+- [x] Build the setup and recover from a failed placement or connection.
+
+Factory goals such as `Build a sustainable iron smelting setup` use a dedicated
+structured planner. Python checks the exact two-machine design, inventory budget,
+fuel sequence, output geometry, and local resource position. Factorio then performs
+a read-only preflight with the real placement and collision rules before any item is
+consumed. Construction is transactional: a placement or production failure mines the
+new entities back up and gives the model bounded feedback for another design.
+
+Run `python3 tests/factory_challenge.py sequence` to isolate the real game mechanics,
+or `python3 tests/factory_challenge.py qwen3:8b` for the complete local-model test.
+Both use a disposable Factorio 2.0.77 world and remove it afterward. Verified on the
+local M4 Mac on **2026-09-18**: `qwen3:8b` rejected a blocked north layout, redesigned
+east, built the setup, and increased the furnace result from 2 to 5 plates. The run
+used two designs, one failed preflight, one recovery, and 64.92 seconds.
 
 **Done when:** the finished setup sustains production, rather than merely placing
 all the requested entities.
