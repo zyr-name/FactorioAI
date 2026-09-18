@@ -18,6 +18,13 @@ placement, and transfer counters.
 For direct CLI testing, stop Ada in the portal first, then use
 `bin/companion status` or `bin/companion move 5 0 --relative`.
 
+For autonomous work, install an Ollama model (`ollama pull qwen3:8b`), enter
+`ollama:qwen3:8b` as the player's model, and give it one measurable instruction
+such as `Produce 20 iron plates from available supplies.` The worker uses fresh
+observations and one schema-validated action per turn. The portal shows its
+current phase, objective, latest decision, failures, and recovery attempts, and
+provides pause, resume, and stop controls. `scripted` remains the passive default.
+
 `install-companion` creates a complete backup, installs/enables the mod, and
 sets `auto_pause=false` so movement and the disconnect watchdog continue when
 no human is connected. It preserves an existing character when updating the

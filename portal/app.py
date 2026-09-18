@@ -111,10 +111,10 @@ def handler(portal):
                         portal.players.close()
                     output = portal.server.action(action, payload)
                     return self.json_response({"ok": True, "output": output})
-                match = re.fullmatch(r"/api/players/([a-z0-9_-]+)/(start|stop)", path)
+                match = re.fullmatch(r"/api/players/([a-z0-9_-]+)/(start|stop|pause|resume)", path)
                 if match:
                     player_id, action = match.groups()
-                    value = portal.players.start(player_id) if action == "start" else portal.players.stop(player_id)
+                    value = getattr(portal.players, action)(player_id)
                     return self.json_response({"ok": True, "runtime": value})
                 self.send_error(HTTPStatus.NOT_FOUND)
             except (OSError, ValueError, json.JSONDecodeError) as error:

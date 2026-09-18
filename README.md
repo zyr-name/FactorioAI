@@ -165,14 +165,41 @@ force-charted chunks.
 
 ### 4. One model-controlled worker
 
-- [ ] Add an observe → decide → act → verify loop with a replaceable model adapter.
-- [ ] Run a first local model through Ollama on the workstation and measure its
+- [x] Add an observe → decide → act → verify loop with a replaceable model adapter.
+- [x] Run a first local model through Ollama on the workstation and measure its
   suitability; start by evaluating an approximately 8B model.
-- [ ] Let the model choose bounded jobs while Python and Lua execute mechanics.
-- [ ] Complete the first configured job: **produce 20 iron plates from available
+- [x] Let the model choose bounded jobs while Python and Lua execute mechanics.
+- [x] Complete the first configured job: **produce 20 iron plates from available
   supplies**, within a decision and time limit.
-- [ ] Show the current task, recent actions, failures, and recovery attempts;
+- [x] Show the current task, recent actions, failures, and recovery attempts;
   support safe pause and stop.
+
+The first adapter uses Ollama's structured chat response. Install a local model
+with `ollama pull qwen3:8b`, then set the player's **Model / driver** to
+`ollama:qwen3:8b` and its instructions to a bounded goal such as
+`Produce 20 iron plates from available supplies.` The default `scripted` driver
+keeps the character connected without making autonomous decisions.
+
+Each model turn can select exactly one validated action. The Python runtime caps
+a run at 30 decisions, five consecutive failures, and five minutes; Lua still
+owns movement, reach, recipes, inventory transfers, crafting time, and item
+conservation. A separate heartbeat preserves the short controller lease while
+local inference is running. Pause releases that lease and cancels any in-flight
+game action; resume reacquires it and starts from a fresh observation. Stop is
+also checked after inference and before the selected action is submitted.
+
+Run the disposable real-model acceptance job with
+`python3 tests/model_challenge.py qwen3:8b`. It refuses to begin unless the
+prepared supplies and furnace are visible through the normal observation API,
+and only passes when 20 plates are verified in the character inventory.
+
+Verified on the local M4 Mac with `qwen3:8b` and a disposable Factorio 2.0.77
+world on **2026-09-18**: 20 plates were game-verified after 10 model decisions
+and 91.28 seconds. The run recovered from two failed decisions, including a
+premature `finish` that the Python verifier rejected. This is suitable for the
+first bounded job, though the observed 5–11 second decision latency and need for
+explicit machine-processing guidance make it a baseline rather than a final
+model choice.
 
 **Done when:** the local model finishes the small production task and recovers
 from simple missing-supply or blocked-action situations.
