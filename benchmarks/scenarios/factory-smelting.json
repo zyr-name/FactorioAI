@@ -1,0 +1,20 @@
+{
+  "id": "factory-smelting-v1",
+  "name": "Blocked direct-feed smelter",
+  "objective": "Build a sustainable iron smelting setup from the available materials.",
+  "seed": 12345,
+  "factorio_version": "2.0.77",
+  "initial_inventory": {
+    "burner-mining-drill": 1,
+    "stone-furnace": 1,
+    "coal": 10
+  },
+  "limits": {
+    "max_designs": 4,
+    "max_wall_seconds": 300,
+    "default_sample_seconds": 12
+  },
+  "success": "The furnace result contains at least one iron plate and grows across two equally spaced samples.",
+  "timing_policy": "The headless server runs at normal game speed with auto_pause disabled. Wall time includes model inference and game actions. Game time is measured from Factorio ticks at 60 ticks per nominal second; the simulation continues during inference.",
+  "waste_policy": "Waste counts the two initial placement items if they are neither present in the finished factory nor returned to the character inventory. Fuel consumed by productive machines is not waste."
+}

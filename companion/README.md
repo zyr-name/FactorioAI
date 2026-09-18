@@ -129,6 +129,16 @@ python3 tests/factory_challenge.py sequence
 python3 tests/factory_challenge.py qwen3:8b
 ```
 
+For repeatable comparisons, use the versioned benchmark scenario instead:
+
+```bash
+bin/benchmark --model sequence --model qwen3:8b --repeat 2
+```
+
+Every run starts from a clean fixed-seed world. JSON data and a readable Markdown
+comparison are written to `benchmark-results/`; the report records both simulation
+ticks and wall time because the game continues running while Ollama is thinking.
+
 It verifies idempotent spawning, inventory preservation, normal movement,
 collision blocking, exclusive control, duplicate handling, emergency stop,
 craft cancellation/refunds, inspect/observe/mine/craft/place/rotate/transfer, plan

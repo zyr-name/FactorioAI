@@ -47,6 +47,8 @@ class FactoryRuntime:
         self.designs = 0
         self.failures = 0
         self.recoveries = 0
+        self.rollbacks = 0
+        self.rolled_back_entities = 0
         self.phase = "observing"
         self.last_action = None
         self.feedback = []
@@ -168,10 +170,15 @@ class FactoryRuntime:
         return placements
 
     def _rollback(self, placed, control):
+        recovered = 0
         for placement in reversed(placed):
             self._check_control(control)
             self.client.mine(placement["x"], placement["y"], name=placement["item"],
                              timeout=30, control=control)
+            recovered += 1
+        if recovered:
+            self.rollbacks += 1
+            self.rolled_back_entities += recovered
 
     def _building(self, observation, placement):
         for building in observation.get("local_area", {}).get("buildings", []):

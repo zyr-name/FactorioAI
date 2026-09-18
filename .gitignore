@@ -20,3 +20,4 @@ server/.staging-*/
 __pycache__/
 *.pyc
 /dist/
+/benchmark-results/

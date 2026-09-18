@@ -229,13 +229,43 @@ all the requested entities.
 
 ### 6. Repeatable model comparisons
 
-- [ ] Maintain a persistent playground and resettable challenge scenarios.
-- [ ] Reload identical starting saves and swap models with the same tools,
+- [x] Maintain a persistent playground and resettable challenge scenarios.
+- [x] Reload identical starting worlds and swap models with the same tools,
   instructions, supplies, and limits.
-- [ ] Record model identity, task success, sustained production, game and wall-clock
+- [x] Record model identity, task success, sustained production, game and wall-clock
   time, decisions, cost, failed actions, recovery, waste, and human interventions.
-- [ ] Repeat runs and export readable comparisons; record the simulation timing policy.
+- [x] Repeat runs and export readable comparisons; record the simulation timing policy.
 - [ ] Optionally add inexpensive cloud model adapters with explicit spending limits.
+
+The portal remains the persistent playground. Versioned manifests under
+`benchmarks/scenarios/` define resettable challenges; every measured run receives a
+fresh temporary Factorio data directory, the same fixed seed and scene setup, and a
+separate controller/model instance. Run a comparison with one command:
+
+```bash
+bin/benchmark --model qwen3:8b --model another-local-model --repeat 3
+```
+
+Each run is retained even when it fails. The command writes a machine-readable JSON
+experiment and a Markdown table under the ignored local `benchmark-results/`
+directory. Reports include success and sustained-production rates, Factorio ticks,
+wall time, decisions, failures, recoveries, rollbacks, token counts, estimated cost,
+placement-item waste, and human interventions. Local Ollama cost is recorded as zero
+with electricity and hardware amortization explicitly excluded.
+
+The `factory-smelting-v1` timing policy keeps the headless server at normal speed with
+`auto_pause=false`; simulation continues during inference. Game time is derived from
+Factorio ticks at 60 ticks per nominal second, while wall time includes inference and
+all actions. Use `--model sequence` as a mechanics-only control. `--sample-seconds`
+exists for experiments, but comparable runs should keep the manifest's 12-second
+default.
+
+Verified on the local M4 Mac on **2026-09-18** with one command and two freshly
+reset worlds: the deterministic control passed in 25.265 wall seconds with one
+decision, while `qwen3:8b` passed in 64.795 seconds with two designs and one
+recovery. Both increased furnace output from 2 to 5 plates with zero placement-item
+waste and zero human interventions; the model used 1,809 prompt and 517 output
+tokens.
 
 **Done when:** one command replays a challenge across models and produces
 comparable results. Comparisons can begin with one character.
